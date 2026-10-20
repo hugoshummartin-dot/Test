@@ -1,4 +1,4 @@
-# Project Junket
+# Reticular: Networking Simulator
 
 ## Pocket Expat (phone game)
 
