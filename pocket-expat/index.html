@@ -1,0 +1,896 @@
+<title>Pocket Expat</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: one-column phone app — sticky status bar, scrolling view, fixed tab bar. Airmail paper + boarding passes; the gacha is a split-flap departures board. */
+:root {
+  --bg: #eaeff4;
+  --surface: #ffffff;
+  --surface-2: #f5f7fa;
+  --ink: #142033;
+  --muted: #5a6a7e;
+  --line: #d3dce6;
+  --red: #c4343e;
+  --blue: #1f4fa0;
+  --board: #10161e;
+  --board-ink: #f2b53c;
+  --board-dim: #6f7c8c;
+  --r1: #7f8c9d;
+  --r2: #23917f;
+  --r3: #7552d1;
+  --r4: #c98a10;
+  --good: #23917f;
+  --bad: #c4343e;
+  --shadow: 0 1px 2px rgba(20, 32, 51, .08), 0 4px 14px rgba(20, 32, 51, .06);
+  --f-display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d131b; --surface: #17202b; --surface-2: #1d2734; --ink: #e7edf4; --muted: #94a4b8; --line: #2a3747;
+    --red: #e5646d; --blue: #7aa3ee; --board: #070b10; --board-ink: #f6c055; --board-dim: #66778a;
+    --r1: #8d9aab; --r2: #3dbba6; --r3: #9b80ef; --r4: #e7ac34; --good: #3dbba6; --bad: #e5646d;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d131b; --surface: #17202b; --surface-2: #1d2734; --ink: #e7edf4; --muted: #94a4b8; --line: #2a3747;
+  --red: #e5646d; --blue: #7aa3ee; --board: #070b10; --board-ink: #f6c055; --board-dim: #66778a;
+  --r1: #8d9aab; --r2: #3dbba6; --r3: #9b80ef; --r4: #e7ac34; --good: #3dbba6; --bad: #e5646d;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.app { max-width: 560px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
+
+/* status bar with airmail stripe */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface);
+  padding-block: 10px 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line);
+}
+.top::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px;
+  background: repeating-linear-gradient(-45deg, var(--red) 0 10px, transparent 10px 20px, var(--blue) 20px 30px, transparent 30px 40px);
+  opacity: .8;
+}
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 13px; letter-spacing: .01em; margin-right: auto; white-space: nowrap; }
+.brand span { color: var(--red); }
+.chip {
+  font-family: var(--f-mono); font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.chip b { font-weight: 700; }
+
+.view {
+  flex: 1; padding-block: 18px 110px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 16px;
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
+h3 { font-size: 15px; font-weight: 700; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+
+.btn {
+  border: 1px solid var(--line); background: var(--surface); padding: 10px 14px; border-radius: 10px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; justify-content: center; min-height: 44px;
+}
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.red { background: var(--red); color: #fff; border-color: var(--red); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn .cost { font-family: var(--f-mono); font-size: 12px; font-weight: 500; opacity: .8; }
+.btn.block { width: 100%; }
+
+/* tab bar */
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+.tabs-inner { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+.tab {
+  border: 0; background: none; padding: 10px 4px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: 12px; font-weight: 600; color: var(--muted); position: relative;
+}
+.tab svg { width: 22px; height: 22px; }
+.tab[aria-current="page"] { color: var(--ink); }
+.tab[aria-current="page"]::before { content: ""; position: absolute; top: 0; left: 30%; right: 30%; height: 3px; border-radius: 0 0 3px 3px; background: var(--red); }
+.tab .badge { position: absolute; top: 6px; left: calc(50% + 8px); background: var(--red); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 5px; line-height: 16px; font-family: var(--f-mono); }
+
+/* departures board (gacha) */
+.board {
+  background: var(--board); color: var(--board-ink); border-radius: 14px; padding: 16px; font-family: var(--f-mono);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px;
+}
+.board-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.board-title { font-family: var(--f-display); font-weight: 800; font-size: 18px; letter-spacing: .04em; }
+.board-sub { color: var(--board-dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.flaps { display: flex; flex-direction: column; gap: 5px; }
+.flap-row { display: grid; grid-template-columns: 3.9em 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.flap {
+  display: inline-flex; gap: 2px;
+}
+.flap i {
+  font-style: normal; display: inline-block; min-width: 1.15em; text-align: center; color: var(--board-ink);
+  background: linear-gradient(#222c39 0 49%, #06090d 49% 53%, #1a2330 53%);
+  border-radius: 3px; padding: 3px 0; font-weight: 700; font-size: 14px; line-height: 1.1;
+}
+.flap-row .dest { color: #e9edf2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.flap-row .rate { color: var(--board-dim); font-variant-numeric: tabular-nums; }
+.board .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.board .btn { background: #1d2632; border-color: #2c3746; color: #f4f6f9; }
+.board .btn.gold { background: var(--board-ink); color: #10161e; border-color: var(--board-ink); }
+.pity { color: var(--board-dim); font-size: 11px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pity b { color: var(--board-ink); }
+@keyframes flip { 0% { transform: rotateX(90deg); } 60% { transform: rotateX(-12deg); } 100% { transform: rotateX(0); } }
+.flipping i { animation: flip .35s ease-out both; }
+
+/* boarding pass event card */
+.pass {
+  background: var(--surface); border-radius: 12px; box-shadow: var(--shadow); display: grid; grid-template-columns: 1fr auto;
+  position: relative; overflow: hidden; border: 1px solid var(--line);
+}
+.pass::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--rc, var(--r1)); }
+.pass-main { padding: 12px 12px 12px 17px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pass-stub {
+  padding: 12px; border-left: 2px dashed var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-width: 84px; background: var(--surface-2);
+}
+.iata { font-family: var(--f-display); font-weight: 800; font-size: 22px; letter-spacing: .02em; line-height: 1; }
+.pass-title { font-weight: 700; font-size: 15px; line-height: 1.3; }
+.pass-meta { font-size: 13px; color: var(--muted); }
+.pass-pitch { font-size: 13px; font-style: italic; color: var(--muted); }
+.pass-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+.pass.expired { opacity: .5; }
+.pass.new { animation: pop .5s ease-out both; }
+@keyframes pop { from { transform: translateY(8px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+.stars { font-family: var(--f-mono); font-weight: 700; font-size: 12px; color: var(--rc, var(--r1)); letter-spacing: .05em; white-space: nowrap; }
+.tier { font-family: var(--f-mono); font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; background: var(--rc, var(--r1)); }
+.r1 { --rc: var(--r1); } .r2 { --rc: var(--r2); } .r3 { --rc: var(--r3); } .r4 { --rc: var(--r4); } .r0 { --rc: var(--line); }
+.tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+.tag.good { color: var(--good); border-color: var(--good); }
+.tag.bad { color: var(--bad); border-color: var(--bad); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
+.empty { text-align: center; padding: 28px 16px; color: var(--muted); border: 1.5px dashed var(--line); border-radius: 12px; }
+
+/* contacts */
+.contacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.contact {
+  background: var(--surface); border-radius: 12px; border: 2px solid var(--rc); padding: 12px; display: flex; flex-direction: column; gap: 4px;
+  position: relative; min-width: 0;
+}
+.contact .monogram {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-display); font-weight: 700;
+  background: color-mix(in srgb, var(--rc) 18%, var(--surface)); color: var(--rc); font-size: 15px;
+}
+.contact .tier { position: absolute; top: 10px; right: 10px; }
+.contact .nm { font-weight: 700; line-height: 1.25; }
+.contact .oc { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.progress { height: 8px; background: var(--surface-2); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.progress > span { display: block; height: 100%; background: var(--red); border-radius: 8px; transition: width .4s ease; }
+
+/* scene */
+.scene-head { display: flex; flex-direction: column; gap: 8px; }
+.clock { font-family: var(--f-mono); font-weight: 700; font-size: 28px; font-variant-numeric: tabular-nums; line-height: 1; }
+.convo { border-left: 5px solid var(--blue); }
+.stage-dots { display: flex; gap: 5px; }
+.stage-dots span { width: 22px; height: 6px; border-radius: 3px; background: var(--line); }
+.stage-dots span.on { background: var(--blue); }
+.log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.log p { padding: 8px 10px; background: var(--surface-2); border-radius: 8px; border: 1px solid var(--line); }
+.log p.sys { background: none; border: 0; padding: 0 2px; color: var(--muted); font-size: 13px; }
+.log p.gain { border-color: var(--good); }
+.guests { display: flex; flex-direction: column; gap: 6px; }
+.guest {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px 8px 8px 10px; text-align: left; width: 100%;
+}
+.guest .num { font-family: var(--f-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.2em; }
+.guest .desc { font-size: 14px; min-width: 0; }
+.guest .desc b { display: block; }
+.guest.current { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.guest.met .num { color: var(--blue); }
+.filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.filters button { flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 6px 12px; font-size: 13px; font-weight: 600; min-height: 34px; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.search { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; font: inherit; color: var(--ink); min-height: 44px; }
+
+/* sheet */
+.scrim { position: fixed; inset: 0; background: rgba(8, 12, 18, .5); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  background: var(--surface); width: 100%; max-width: 560px; border-radius: 18px 18px 0 0; max-height: 86%; overflow-y: auto;
+  padding-block: 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 14px; animation: rise .22s ease-out both;
+}
+@keyframes rise { from { transform: translateY(30px); opacity: .4; } to { transform: none; opacity: 1; } }
+
+/* morning-after reveal */
+.reveal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.flipcard { perspective: 800px; border: 0; background: none; padding: 0; min-height: 168px; text-align: left; display: block; width: 100%; }
+.flipcard .in { display: block; position: relative; width: 100%; height: 100%; min-height: 168px; transition: transform .6s cubic-bezier(.2,.7,.2,1); transform-style: preserve-3d; }
+.flipcard.open .in { transform: rotateY(180deg); }
+.flipcard .face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.flipcard .back {
+  background: repeating-linear-gradient(-45deg, var(--red) 0 8px, var(--surface) 8px 16px, var(--blue) 16px 24px, var(--surface) 24px 32px);
+  border: 1px solid var(--line); align-items: center; justify-content: center;
+}
+.flipcard .back span { background: var(--surface); padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 13px; text-align: center; }
+.flipcard .front { transform: rotateY(180deg); background: var(--surface); border: 2px solid var(--rc); }
+.flipcard.open.r4 .front { box-shadow: 0 0 0 3px color-mix(in srgb, var(--r4) 35%, transparent), 0 0 24px color-mix(in srgb, var(--r4) 45%, transparent); }
+
+/* passport */
+.stamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px; }
+.stamp {
+  aspect-ratio: 1; max-width: 100%; border-radius: 50%; border: 2px dashed var(--line); display: grid; place-items: center; text-align: center;
+  font-family: var(--f-mono); font-size: 10px; color: var(--muted); line-height: 1.2; padding: 6px;
+}
+.stamp b { display: block; font-family: var(--f-display); font-size: 17px; }
+.stamp.got { border: 2.5px double var(--red); color: var(--red); transform: rotate(var(--rot, -6deg)); }
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.stat .v { font-family: var(--f-display); font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; max-width: calc(100% - 32px);
+  box-shadow: var(--shadow);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="app">
+  <header class="top" id="top"></header>
+  <main class="view" id="view"></main>
+</div>
+<nav class="tabs" id="tabs" aria-label="Sections"><div class="tabs-inner" id="tabs-inner"></div></nav>
+<div class="scrim" id="scrim" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- content
+const CITIES = [
+  ["LIS","Lisbon"],["BER","Berlin"],["ICN","Seoul"],["NBO","Nairobi"],["EZE","Buenos Aires"],["SIN","Singapore"],
+  ["YUL","Montréal"],["DXB","Dubai"],["MEX","Mexico City"],["HND","Tokyo"],["CPH","Copenhagen"],["CPT","Cape Town"],
+  ["IST","Istanbul"],["BOM","Mumbai"],["GRU","São Paulo"],["JFK","New York"],["GVA","Geneva"],["CDG","Paris"],
+];
+const CITY = Object.fromEntries(CITIES.map(([c, n]) => [c, n]));
+
+const TIERS = {
+  1: { tag: "N",   name: "Common",    stars: "★",    rate: .55, share: .05, size: 30, base: 20 },
+  2: { tag: "R",   name: "Rare",      stars: "★★",   rate: .30, share: .15, size: 50, base: 40 },
+  3: { tag: "SR",  name: "Super rare", stars: "★★★",  rate: .12, share: .20, size: 80, base: 70 },
+  4: { tag: "SSR", name: "Legendary", stars: "★★★★", rate: .03, share: .30, size: 100, base: 120 },
+};
+const CONTACT_MILES = { 1: 5, 2: 60, 3: 150, 4: 400 };
+const REACH = { 1: 0, 2: 1, 3: 3, 4: 8 };
+const LEVELS = [[0,"Tourist"],[2,"Exchange student"],[6,"Intern abroad"],[14,"Young professional"],[30,"Global insider"],[60,"Pocket Expat legend"]];
+const PULL = 100, PULL10 = 900, STIPEND = 50, FLIGHT = 100, START_MILES = 1200;
+const SR_PITY = 10, SSR_PITY = 60;
+
+// Event titles per tier. Common ones sound grand; the venue gives them away.
+const EVENTS = {
+  1: [
+    ["Exclusive Founders' Mixer","a bowling alley"],["Global Leaders Networking Night","a hostel rooftop"],
+    ["Expat Pub Crawl","three pubs, possibly four"],["Language Exchange Speed Round","a café basement"],
+    ["Crypto Brunch","a hotel conference room"],["Startup Pitch Night (€15 entry)","a co-working space"],
+    ["Visionaries' Sunset Cruise","a boat that stays docked"],["Masterclass: Manifesting Abundance","a community centre"],
+  ],
+  2: [
+    ["Chamber of Commerce Afterwork","the chamber's terrace"],["Design Week Opening","a converted warehouse"],
+    ["Alumni Networking Evening","the university hall"],["Tech Meetup with Sponsors","a scale-up's office"],
+    ["Gallery Vernissage","a contemporary gallery"],["Architecture Biennale Talk","the city pavilion"],
+  ],
+  3: [
+    ["Embassy Cultural Reception","the embassy garden"],["Film Festival Industry Party","the festival lounge"],
+    ["Book Fair Publishers' Cocktail","the fair's VIP hall"],["Biennale Preview Night","the national pavilion"],
+    ["Trade Mission Dinner","the consul's residence"],["Fashion Week After-party","a private atelier"],
+  ],
+  4: [
+    ["Economic Forum Side Reception","a lakeside villa"],["Ambassador's National Day Gala","the ambassador's residence"],
+    ["Festival Jury Dinner","a palace terrace"],["Summit Leaders' Cocktail","the summit's closed lounge"],
+    ["Foundation Laureates' Banquet","the opera foyer"],
+  ],
+};
+
+const FIRST = ["Ada","Alain","Amara","Anouk","Arjun","Beatriz","Bram","Camille","Chiara","Dario","Delphine","Dmitri","Elena","Emeka","Esther","Fabian","Farah","Felix","Greta","Hamid","Hana","Hugo","Ines","Isak","Jonas","Josephine","Kenji","Lars","Leila","Luca","Mai","Malik","Margot","Mateo","Mira","Nadia","Nico","Noor","Olga","Oscar","Paloma","Pieter","Priya","Quentin","Rafael","Rosa","Sacha","Selin","Soren","Tariq","Thea","Tomas","Ugo","Valentina","Viktor","Wanda","Xavier","Yara","Yusuf","Zoe","Aiko","Bongani","Chen","Dalia","Emre","Fatou","Giulia","Ji-woo","Kwame","Lucía","Mehmet","Nia","Omar","Pita","Rania","Siddharth","Thandi","Wei","Ximena","Zainab"];
+const LAST = ["Albers","Bakker","Benali","Castell","Costa","Dubois","Eriksen","Ferreira","Fontaine","Gallo","Hartmann","Haddad","Ivanova","Jansen","Kaur","Keller","Laurent","Lindqvist","Marchetti","Moreau","Nakamura","Novak","Okafor","Oyelaran","Petrov","Quist","Rahman","Rossi","Santos","Schmidt","Silva","Takahashi","Toussaint","Ullman","Varga","Vermeulen","Weber","Wright","Yilmaz","Zanetti","Kim","Mensah","Ortega","Park","Mwangi","Demir","Nair","Ramírez","Chowdhury","Dlamini"];
+
+// appearance pools: [text, w_interesting, w_clueless, w_useless]
+const AGES = [["young",1,3,3],["thirty-something",2,2,3],["middle-aged",3,2,2],["grey-haired",3,2,1],["elderly",1,2,.5]];
+const FIGURES = [["man",1,1,1],["woman",1,1,1],["person",.3,.3,.3]];
+const OUTFITS = [
+  ["a sharply tailored charcoal suit",3,1,3],["an understated navy blazer",4,2,1],["a crumpled linen jacket",2,3,1],
+  ["a sequinned jacket",1,1,4],["a black turtleneck",3,1,2],["jeans and a band T-shirt",1,3,1],["a silk dress",2,2,2],
+  ["a velvet smoking jacket",1,1,3],["a plain white shirt",1,3,1],["a vintage tweed coat",2,2,1],
+  ["a logo-covered designer hoodie",.5,1,4],["a plain grey cardigan",2,3,1],["an elegant black dress",3,2,2],["a loud floral shirt",1,2,3],
+];
+const BEHAVIOURS = [
+  ["talking quietly with the host",5,.5,1],["loudly telling a story to a shrinking circle",.5,1,5],["hovering by the canapés",.5,4,2],
+  ["glancing at the door as if about to leave",3,1,1],["handing out business cards to anyone nearby",.5,.5,5],
+  ["listening more than talking",4,2,.5],["scrolling through their phone in a corner",1,4,2],["laughing a bit too loudly",.5,2,3],
+  ["being greeted by several people in turn",4,1,2],["studying the artwork on the walls",2,3,1],
+  ["on what looks like a third glass of champagne",.5,3,3],["nursing a sparkling water",3,2,1],
+  ["taking selfies with the room in the background",.2,2,4],["waiting for someone to talk to",1,4,1],
+];
+const ACCESSORIES = [
+  ["an expensive but discreet watch",3,1,2],["a lanyard from an unrelated conference",.5,3,2],["reading glasses pushed up on their head",2,2,1],
+  ["a gold chain",.5,1,3],["a battered leather notebook",3,2,1],["a tote bag full of flyers",.2,1,4],
+  ["a lapel pin you don't recognise",2,1,2],["a phone in each hand",1,.5,3],["nothing remarkable",2,3,2],
+];
+
+// [claim, real role, substance, offer]
+const ROLES = {
+  interesting: [
+    ["I work with pictures, mostly.","Director of a contemporary art gallery","We're always looking for sharp young people for the next show.","a paid assistant job on the next exhibition"],
+    ["I invest a little.","Partner at a venture capital fund","Our fund backs student founders. Send me what you're working on.","a real meeting with an investor"],
+    ["I read a lot for a living.","Senior editor at a publishing house","We need readers who can tell a good manuscript from a bad one.","freelance manuscript reports"],
+    ["I put on shows.","Theatre producer","There's always a production assistant slot for someone keen.","a production assistant role"],
+    ["I run a small lab.","Head of a university research lab","We take one or two student researchers a year. Most never ask.","a research internship"],
+    ["I'm with the embassy.","Chief of staff to an ambassador","Our cultural programme takes interns every term.","an embassy internship"],
+    ["I draw buildings.","Founder of an architecture studio","We're short of hands for a competition entry.","a paid competition sprint"],
+    ["I feed people.","Restaurateur with three acclaimed restaurants","Half my investors I met at my own tables.","a seat where real deals get made"],
+    ["I write things down.","Investigative journalist at a national paper","I need someone who can dig through records patiently.","a research assistant role and a byline"],
+    ["I watch films.","Programmer for an international film festival","Our selection committee needs pre-screeners.","an accreditation and a pre-screener job"],
+    ["I sold a company once.","Serial founder with an exit","I like helping people who ask good questions.","a mentor with a deep address book"],
+    ["I look after old things.","Chief curator at the national museum","Our archive project needs research staff — paid ones, now.","a paid archive post"],
+    ["I give money away.","Programme officer at a large foundation","Our student grants go unclaimed because nobody applies.","a grant application that gets read"],
+    ["I argue for a living.","Partner at an international law firm","Our summer programme fills from referrals.","a referral for a summer associate post"],
+    ["I find people talent.","Talent agent at a major agency","I can always use an assistant who knows the scene.","an assistant job inside a top agency"],
+    ["I wave a stick.","Principal conductor of the city orchestra","Our outreach team is desperate for organised people.","an outreach coordinator role"],
+    ["I do clothes.","Creative director at a fashion house","Our studio takes two interns a season.","a studio internship"],
+    ["I cut people open.","Chief of surgery at a university hospital","Our innovation unit wants students from outside medicine.","a place on an innovation project"],
+    ["I break computers, professionally.","CTO of a fast-growing software company","We hire juniors on recommendation, not CVs.","a recommendation that skips the CV pile"],
+    ["I listen to records.","A&R lead at a record label","I need scouts who actually go to gigs.","a paid scouting gig"],
+  ],
+  useless: [
+    ["I'm in venture — well, angel-ish.","Has never invested a cent","I could put you in front of my network. Huge network.","a lot of LinkedIn requests"],
+    ["Brand strategist, influencer, visionary.","Has 900 followers","We should collab. Seriously. My audience would love you.","an unpaid 'collab'"],
+    ["I'm producing a film. In development.","Has been 'in development' for nine years","There might be a role for you behind the camera. Unpaid at first.","unpaid weekends on a film that won't be made"],
+    ["Crypto founder.","Runs a token nobody trades","Get in early. I mean it. This is the ground floor.","a chance to lose your savings"],
+    ["I'm a life coach. Mindset, mostly.","Self-certified last month","You've got blocks. I can see it. First session's half price.","an invoice"],
+    ["I run a networking collective.","Runs a group chat","We're like this party, but better. And more often.","more parties minus the interesting people"],
+    ["I'm launching a startup. Stealth mode.","Has a domain name and a logo","Need a co-founder. Equity only. Could be you.","months of unpaid work for 0.5% of nothing"],
+    ["I consult. For various clients.","Between jobs, creatively","I could probably get you some work. Probably.","vague promises"],
+    ["I'm an art dealer, sort of.","Sells prints of their own paintings","You should buy something now, before I'm famous.","a sales pitch"],
+    ["Motivational speaker.","Spoke once, at a wedding","Come to my talk. It'll change how you see yourself.","a ticket to their talk"],
+  ],
+  clueless: [
+    ["I'm just the plus-one, honestly.","Plus-one of someone who already left","No idea who most of these people are, to be honest.","nothing, though they mean well"],
+    ["I'm on exchange too!","Student, as lost as you are","Do you know who the important people are? I was hoping you did.","commiseration"],
+    ["I do IT for the caterer.","Off-duty IT technician","Free wine, though, right?","nothing for your career"],
+    ["Came for the drinks, to be honest.","Gatecrasher","Have you tried the little salmon things? Amazing.","canapé recommendations"],
+    ["Accounts, at a company you won't have heard of.","Accounts clerk","It's very stable work. Very, very stable.","a description of spreadsheets"],
+    ["I'm retired. My nephew dragged me here.","Retired, charming, uninvolved","In my day these parties had a band.","stories about the old days"],
+    ["I'm a friend of the photographer.","Friend of the hired photographer","I mostly just hold the spare lenses.","nothing"],
+    ["I sell insurance.","Insurance salesperson, off the clock","If you ever need cover, I'm your person. Otherwise…","an insurance quote"],
+    ["I think I'm at the wrong party.","Genuinely at the wrong party","Is this not the dentists' reunion?","directions to the dentists' reunion"],
+    ["Yoga teacher. Well, training to be.","Yoga trainee","This room has such a weird energy, doesn't it?","a free trial class"],
+  ],
+};
+const PITCHES = {
+  interesting: ["Come early — I'll introduce you around.","Small, invitation only. I'll put your name down.","Half the people worth knowing will be there.","Bring a CV. Actually, bring yourself.","Sit next to me and keep your ears open."],
+  useless: ["Everyone who's anyone. Entry is only €40.","Bring 50 business cards.","Life-changing. Early-bird pricing ends tonight.","Wallets ready!","Very strategic people. Very."],
+  clueless: ["Come along, it'll be fun!","We're always one short.","There might be snacks.","No pressure, honestly."],
+};
+const SMALL_TALK = {
+  interesting: ["They shake your hand and ask what you're studying — and seem to actually listen.","A measured look, then a small smile. \"You're not one of the usual faces.\"","Polite but brief; you sense you have a few minutes, no more.","They're mid-sentence with someone else, but turn to include you."],
+  useless: ["They grab your hand with both of theirs. \"Love the energy! What's your story?\"","They start talking before you've finished saying hello.","They look over your shoulder twice, then commit with enthusiasm.","\"An exchange student! I LOVE students. So hungry. So driven.\""],
+  clueless: ["They look relieved someone came over.","They offer you a canapé from a napkin they've been saving.","\"Oh, hi! Sorry, do we know each other?\"","They smile warmly and ask if you know where the toilets are."],
+};
+
+// ---------------------------------------------------------------- helpers
+const rnd = () => Math.random();
+const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+const pick = a => a[Math.floor(rnd() * a.length)];
+const KIDX = { interesting: 1, clueless: 2, useless: 3 };
+function wpick(pool, kind) {
+  const i = KIDX[kind], tot = pool.reduce((s, p) => s + p[i], 0);
+  let x = rnd() * tot;
+  for (const p of pool) { x -= p[i]; if (x <= 0) return p[0]; }
+  return pool[pool.length - 1][0];
+}
+const art = w => (/^[aeiou]/.test(w) ? "an " : "a ") + w;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const fmt = n => n.toLocaleString("en-US");
+const initials = n => n.split(" ").map(w => w[0]).join("").slice(0, 2);
+
+// ---------------------------------------------------------------- state
+const KEY = "pocket-expat-v1";
+let S;
+function fresh() {
+  const s = {
+    day: 1, city: "LIS", miles: START_MILES, tab: "board", pity: 0, pitySSR: 0,
+    agenda: [], contacts: [], stamps: [], pulls: 0, attended: 0, scene: null, after: null, lastPull: [],
+  };
+  s.agenda.push({
+    id: uid(), tier: 1, title: "Welcome Drinks for New Arrivals", venue: "the student residence bar", city: "LIS",
+    day: 2, host: "Your residence", pitch: "Free first drink. Meet your new city.", covered: true, revealed: true, source: "starter",
+  });
+  return s;
+}
+function load() {
+  try { const raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw); } catch (e) { /* storage unavailable */ }
+  return null;
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
+S = load() || fresh();
+
+function reach() { return S.contacts.reduce((s, c) => s + REACH[c.tier], 0); }
+function level() {
+  const r = reach(); let cur = LEVELS[0], next = null;
+  for (let i = 0; i < LEVELS.length; i++) if (r >= LEVELS[i][0]) { cur = LEVELS[i]; next = LEVELS[i + 1] || null; }
+  return { r, title: cur[1], from: cur[0], next };
+}
+
+// ---------------------------------------------------------------- gacha
+function rollTier() {
+  let x = rnd();
+  for (const t of [4, 3, 2]) { if (x < TIERS[t].rate) return t; x -= TIERS[t].rate; }
+  return 1;
+}
+function makeEvent(tier, o = {}) {
+  const [title, venue] = pick(EVENTS[tier]);
+  return {
+    id: uid(), tier, title, venue, city: o.city || pick(CITIES)[0], day: o.day || S.day + ri(1, 6),
+    host: o.host || "Open call", pitch: o.pitch || "", covered: !!o.covered, revealed: o.revealed !== false, source: o.source || "board",
+  };
+}
+function pullOne() {
+  S.pity++; S.pitySSR++; S.pulls++;
+  let t = rollTier();
+  if (S.pitySSR >= SSR_PITY) t = 4;
+  else if (S.pity >= SR_PITY && t < 3) t = 3;
+  if (t >= 3) S.pity = 0;
+  if (t === 4) S.pitySSR = 0;
+  return makeEvent(t);
+}
+function pull(n) {
+  const cost = n === 10 ? PULL10 : PULL * n;
+  if (S.miles < cost) return toast(`You need ${fmt(cost)} miles. Wait a day or attend events to earn more.`);
+  S.miles -= cost;
+  const got = [];
+  for (let i = 0; i < n; i++) got.push(pullOne());
+  S.agenda.push(...got);
+  S.lastPull = got.map(e => e.id);
+  save(); render();
+  const flaps = document.querySelector(".flaps");
+  if (flaps) flaps.classList.add("flipping");
+  const best = Math.max(...got.map(e => e.tier));
+  toast(best >= 3 ? `${TIERS[best].tag}! ${got.find(e => e.tier === best).title}` : `${n} event${n > 1 ? "s" : ""} added to your agenda`);
+}
+
+// ---------------------------------------------------------------- days & travel
+function expire() { S.agenda = S.agenda.filter(e => e.day >= S.day); }
+function advanceTo(day) {
+  const days = day - S.day;
+  if (days > 0) { S.miles += STIPEND * days; S.day = day; }
+  expire();
+}
+function waitDay() { advanceTo(S.day + 1); save(); render(); toast(`Day ${S.day}. Stipend +${STIPEND} miles.`); }
+function travelCost(e) { return e.city === S.city || e.covered ? 0 : FLIGHT; }
+
+// ---------------------------------------------------------------- cocktail
+const APPROACH = 5, TALK = 10, DUR = 60, START_H = 19;
+
+function makeGuests(ev) {
+  const T = TIERS[ev.tier], n = T.size, nInt = Math.max(1, Math.round(n * T.share));
+  const kinds = [];
+  for (let i = 0; i < n; i++) kinds.push(i < nInt ? "interesting" : (rnd() < .5 ? "useless" : "clueless"));
+  kinds.sort(() => rnd() - .5);
+  const names = new Set(S.contacts.map(c => c.name));
+  const roles = [...ROLES.interesting].sort(() => rnd() - .5);
+  return kinds.map((kind, i) => {
+    let name; do { name = pick(FIRST) + " " + pick(LAST); } while (names.has(name)); names.add(name);
+    const role = kind === "interesting" ? roles[i % roles.length] : pick(ROLES[kind]);
+    const age = wpick(AGES, kind), fig = wpick(FIGURES, kind), outfit = wpick(OUTFITS, kind);
+    const beh = wpick(BEHAVIOURS, kind), acc = wpick(ACCESSORIES, kind);
+    let tier = 1;
+    if (kind === "interesting") {
+      const x = rnd(); tier = Math.max(2, ev.tier);
+      if (x < .2) tier = Math.min(4, tier + 1); else if (x < .3) tier = Math.max(2, tier - 1);
+    }
+    return {
+      id: i + 1, name, kind, tier, stage: 0, card: false, invite: false,
+      look: `${art(age)} ${fig} in ${outfit}`, beh, acc,
+      claim: role[0], real: role[1], substance: role[2], offer: role[3], small: pick(SMALL_TALK[kind]),
+      leaves: kind === "interesting" ? ri(20, 100) : ri(25, 140),
+    };
+  });
+}
+
+function attend(id) {
+  const ev = S.agenda.find(e => e.id === id);
+  if (!ev) return;
+  const cost = travelCost(ev);
+  if (S.miles < cost) return toast(`The flight to ${CITY[ev.city]} costs ${FLIGHT} miles. You have ${S.miles}.`);
+  S.miles -= cost;
+  advanceTo(ev.day);
+  S.agenda = S.agenda.filter(e => e.id !== id);
+  const fromCity = S.city;
+  S.city = ev.city;
+  S.scene = { ev, min: 0, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [] };
+  const flew = cost ? ` Flight −${cost} miles.` : ev.city !== fromCity ? " Your host covered the flight." : "";
+  sceneLog(`You arrive at ${ev.venue}, ${CITY[ev.city]}. ${TIERS[ev.tier].size} people. You have 60 minutes.${flew}`, "sys");
+  S.tab = "scene";
+  save(); render(); window.scrollTo(0, 0);
+}
+
+function sceneLog(text, cls = "") { S.scene.log.unshift({ text, cls }); S.scene.log = S.scene.log.slice(0, 6); }
+function present() { return S.scene.guests.filter(g => g.leaves > S.scene.min); }
+function guest(id) { return S.scene.guests.find(g => g.id === id); }
+function clock(m) { const t = START_H * 60 + m; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; }
+
+function tick(cost) {
+  const sc = S.scene, before = sc.min;
+  sc.min += cost;
+  const gone = sc.guests.filter(g => g.leaves > before && g.leaves <= sc.min);
+  const anon = [];
+  for (const g of gone) {
+    if (g.id === sc.cur) { sceneLog(`${g.name} glances at their watch, apologises and heads for the coat check.`, "sys"); sc.cur = null; }
+    else if (g.stage > 0) sceneLog(`${g.name} has left.`, "sys");
+    else anon.push(g);
+  }
+  if (anon.length) sceneLog(`${anon.length} ${anon.length === 1 ? "person has" : "people have"} left the room.`, "sys");
+  if (sc.min >= DUR) { sceneLog("The lights come up. The party is over.", "sys"); }
+}
+
+function approach(id) {
+  const sc = S.scene, g = guest(id);
+  if (!g || g.leaves <= sc.min || sc.min + APPROACH > DUR) return;
+  sc.cur = id;
+  if (g.stage === 0) { g.stage = 1; sceneLog(`"Hi, I'm ${g.name}." ${g.small}`); }
+  else sceneLog(`You catch ${g.name} again. They remember you.`);
+  tick(APPROACH); closeSheet(); save(); render();
+}
+
+function talk() {
+  const sc = S.scene, g = guest(sc.cur);
+  if (!g || sc.min + TALK > DUR) return;
+  if (g.stage >= 4) sceneLog(`The conversation with ${g.name} is running dry. You talk about the weather.`);
+  else {
+    g.stage++;
+    if (g.stage === 2) {
+      sceneLog(`You ask what they do. "${g.claim}"`);
+      if (g.kind === "useless") giveCard(g, g.claim, "They press a business card into your hand before you can ask more.");
+    } else if (g.stage === 3) {
+      sceneLog(`"${g.substance}"`);
+      if (g.kind === "interesting") giveCard(g, g.real, `They hand you a plain card: ${g.real}.`);
+      else if (g.kind === "clueless") giveCard(g, g.claim, "You swap numbers, mostly out of politeness.");
+      else giveInvite(g);
+    } else if (g.stage === 4) {
+      if (g.kind === "useless") sceneLog(`${g.name} repeats the pitch, louder. Nothing new.`);
+      else giveInvite(g);
+    }
+  }
+  tick(TALK); save(); render();
+}
+
+function giveCard(g, occ, text) {
+  if (g.card) return sceneLog(text);
+  g.card = true;
+  S.scene.gained.push({ id: uid(), name: g.name, occ, note: g.substance, offer: g.offer, tier: g.tier, kind: g.kind, met: S.scene.ev.city, day: S.day });
+  sceneLog(`${text} Added to your contacts.`, "gain");
+}
+function giveInvite(g) {
+  if (g.invite) return;
+  g.invite = true;
+  const sc = S.scene;
+  let ev;
+  if (g.kind === "interesting") {
+    const t = Math.min(4, g.tier + (rnd() < .25 ? 1 : 0));
+    let city; do { city = pick(CITIES)[0]; } while (city === sc.ev.city && rnd() < .8);
+    ev = makeEvent(t, { city, host: g.name, pitch: pick(PITCHES.interesting), covered: true, revealed: false, source: "contact", day: S.day + ri(2, 7) });
+  } else {
+    const city = g.kind === "useless" && rnd() < .5 ? pick(CITIES)[0] : sc.ev.city;
+    ev = makeEvent(1, { city, host: g.name, pitch: pick(PITCHES[g.kind]), covered: false, revealed: false, source: "contact", day: S.day + ri(1, 5) });
+  }
+  sc.invites.push(ev);
+  sceneLog(`"You should come to the ${ev.title} — ${ev.venue}, ${CITY[ev.city]}, on day ${ev.day}. ${ev.pitch}" Added to your agenda.`, "gain");
+}
+
+function endScene() {
+  const sc = S.scene;
+  const isNewCity = !S.stamps.includes(sc.ev.city);
+  if (isNewCity) S.stamps.push(sc.ev.city);
+  const miles = TIERS[sc.ev.tier].base + sc.gained.reduce((s, c) => s + CONTACT_MILES[c.tier], 0) + (isNewCity ? 100 : 0);
+  S.after = { ev: sc.ev, met: sc.guests.filter(g => g.stage > 0).length, gained: sc.gained, invites: sc.invites, miles, isNewCity, open: [] };
+  S.contacts.push(...sc.gained);
+  S.agenda.push(...sc.invites.map(e => ({ ...e, revealed: true })));
+  S.miles += miles;
+  S.attended++;
+  S.scene = null;
+  advanceTo(S.day + 1);
+  S.tab = "after";
+  save(); render(); window.scrollTo(0, 0);
+}
+
+// ---------------------------------------------------------------- UI
+const $ = s => document.querySelector(s);
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 2600);
+}
+function openSheet(html) { $("#sheet").innerHTML = html; $("#scrim").hidden = false; }
+function closeSheet() { $("#scrim").hidden = true; }
+
+const ICONS = {
+  board: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h6M15 9h2M15 13h2M8 21h8"/></svg>',
+  agenda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  contacts: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="3.5"/><path d="M3 20c.8-3.3 3.2-5 6-5s5.2 1.7 6 5M16 5.5a3 3 0 0 1 0 6M18 15c1.6.7 2.6 2.4 3 5"/></svg>',
+  passport: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="11" r="3.2"/><path d="M8.8 11h6.4M12 7.8c-1 1-1 5.4 0 6.4M12 7.8c1 1 1 5.4 0 6.4M9 17h6"/></svg>',
+};
+
+function renderTop() {
+  const where = S.city;
+  $("#top").innerHTML = `
+    <div class="brand">POCKET <span>EXPAT</span></div>
+    <span class="chip">DAY <b>${S.day}</b></span>
+    <span class="chip" title="${esc(CITY[S.city])}">${esc(where)}</span>
+    <span class="chip"><b>${fmt(S.miles)}</b> mi</span>`;
+}
+function renderTabs() {
+  const inScene = S.tab === "scene" || S.tab === "after";
+  $("#tabs").hidden = inScene;
+  if (inScene) return;
+  const tabs = [["board", "Board"], ["agenda", "Agenda"], ["contacts", "Contacts"], ["passport", "Passport"]];
+  $("#tabs-inner").innerHTML = tabs.map(([k, l]) => `
+    <button class="tab" data-act="tab" data-v="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>
+      ${ICONS[k]}${l}${k === "agenda" && S.agenda.length ? `<span class="badge">${S.agenda.length}</span>` : ""}
+    </button>`).join("");
+}
+
+function flapText(s, n) { return `<span class="flap">${s.padEnd(n).slice(0, n).split("").map(c => `<i>${c === " " ? "&nbsp;" : esc(c)}</i>`).join("")}</span>`; }
+
+function passCard(e, opts = {}) {
+  const T = TIERS[e.tier], cost = travelCost(e), today = e.day === S.day;
+  const when = today ? "Tonight" : `Day ${e.day} · in ${e.day - S.day} day${e.day - S.day === 1 ? "" : "s"}`;
+  const flight = e.city === S.city ? "Local" : e.covered ? "Flight covered" : `Flight ${FLIGHT} mi`;
+  return `
+  <article class="pass r${e.tier}${opts.isNew ? " new" : ""}">
+    <div class="pass-main">
+      <div class="row"><span class="tier">${T.tag}</span><span class="stars">${T.stars}</span>
+        ${e.source === "contact" ? `<span class="tag">via ${esc(e.host)}</span>` : e.source === "starter" ? '<span class="tag">Welcome</span>' : ""}</div>
+      <div class="pass-title">${esc(e.title)}</div>
+      <div class="pass-meta">${esc(e.venue)} · ${esc(CITY[e.city])}</div>
+      ${e.pitch ? `<div class="pass-pitch">"${esc(e.pitch)}"</div>` : ""}
+      ${opts.actions === false ? "" : `<div class="pass-actions">
+        <button class="btn primary" data-act="attend" data-v="${e.id}" ${S.miles < cost ? "disabled" : ""}>Attend<span class="cost">${cost ? `−${cost} mi` : ""}</span></button>
+        <span class="small muted">${flight}</span></div>`}
+    </div>
+    <div class="pass-stub">
+      <span class="label">To</span><span class="iata">${e.city}</span>
+      <span class="label" style="margin-top:6px">When</span><span class="small" style="font-weight:700;text-align:center">${when}</span>
+    </div>
+  </article>`;
+}
+
+function viewBoard() {
+  const recent = S.lastPull.map(id => S.agenda.find(e => e.id === id)).filter(Boolean);
+  const rows = [4, 3, 2, 1].map(t => `
+    <div class="flap-row">${flapText(TIERS[t].tag, 3)}<span class="dest">${esc(TIERS[t].name)} · ${TIERS[t].size} guests</span><span class="rate">${(TIERS[t].rate * 100).toFixed(0)}%</span></div>`).join("");
+  return `
+  <section class="board" aria-label="Event board">
+    <div class="board-head"><span class="board-title">DEPARTURES</span><span class="board-sub">Event board · Day ${S.day}</span></div>
+    <div class="flaps">${rows}</div>
+    <div class="btns">
+      <button class="btn" data-act="pull" data-v="1" ${S.miles < PULL ? "disabled" : ""}>Draw 1<span class="cost">${PULL} mi</span></button>
+      <button class="btn gold" data-act="pull" data-v="10" ${S.miles < PULL10 ? "disabled" : ""}>Draw 10<span class="cost">${PULL10} mi</span></button>
+    </div>
+    <div class="pity"><span>SR or better within <b>${SR_PITY - S.pity}</b> draws</span><span>SSR guaranteed within <b>${SSR_PITY - S.pitySSR}</b></span></div>
+  </section>
+  <p class="small muted">Each draw posts an event somewhere in the world to your agenda. Rarer events draw bigger rooms with more people worth meeting: 5% at a common mixer, 30% at a legendary one. Flights to other cities cost ${FLIGHT} miles unless your host covers them.</p>
+  ${recent.length ? `<div class="stack"><h2>Just drawn</h2>${recent.map(e => passCard(e, { isNew: true })).join("")}</div>` : `
+  <div class="empty">Draw from the board to post your first events. You start with ${fmt(START_MILES)} miles: enough for a ten-draw.</div>`}`;
+}
+
+function viewAgenda() {
+  const evs = [...S.agenda].sort((a, b) => a.day - b.day || b.tier - a.tier);
+  return `
+  <div class="row" style="justify-content:space-between"><h2>Agenda</h2>
+    <button class="btn" data-act="wait">Wait a day<span class="cost">+${STIPEND} mi</span></button></div>
+  <p class="small muted">Going to an event moves the calendar to its day. Anything scheduled before then is missed. One event per evening.</p>
+  ${evs.length ? `<div class="stack">${evs.map(e => passCard(e)).join("")}</div>` :
+    `<div class="empty">Nothing planned. Draw from the board, or meet people who can take you places.</div>`}`;
+}
+
+function viewContacts() {
+  const cs = [...S.contacts].sort((a, b) => b.tier - a.tier || a.name.localeCompare(b.name));
+  const roles = new Set(S.contacts.filter(c => c.kind === "interesting").map(c => c.occ));
+  const by = t => S.contacts.filter(c => c.tier === t).length;
+  return `
+  <div class="row" style="justify-content:space-between"><h2>Address book</h2><span class="chip">${roles.size}/${ROLES.interesting.length} roles</span></div>
+  <div class="row">${[4, 3, 2, 1].map(t => `<span class="tag r${t}" style="border-color:var(--rc);color:var(--rc)">${TIERS[t].tag} ${by(t)}</span>`).join("")}</div>
+  ${cs.length ? `<div class="contacts">${cs.map(c => `
+    <button class="contact r${c.tier}" data-act="contact" data-v="${c.id}" style="text-align:left">
+      <span class="tier">${TIERS[c.tier].tag}</span>
+      <span class="monogram">${esc(initials(c.name))}</span>
+      <span class="nm">${esc(c.name)}</span>
+      <span class="oc">${esc(c.occ)}</span>
+      <span class="small muted">Met in ${esc(CITY[c.met])}</span>
+    </button>`).join("")}</div>` : `<div class="empty">No contacts yet. Cards change hands once a conversation gets past small talk.</div>`}`;
+}
+
+function viewPassport() {
+  const L = level(), pct = L.next ? Math.round((L.r - L.from) / (L.next[0] - L.from) * 100) : 100;
+  return `
+  <div class="card stack">
+    <span class="label">Expat level</span>
+    <h2>${esc(L.title)}</h2>
+    <div class="progress"><span style="width:${pct}%"></span></div>
+    <p class="small muted">${L.next ? `Reach ${L.r} / ${L.next[0]} to become ${esc(L.next[1])}.` : "Top of the world."} Reach: R contacts count 1, SR 3, SSR 8.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="label">Events attended</div><div class="v">${S.attended}</div></div>
+    <div class="stat"><div class="label">Contacts</div><div class="v">${S.contacts.length}</div></div>
+    <div class="stat"><div class="label">Draws</div><div class="v">${S.pulls}</div></div>
+    <div class="stat"><div class="label">Cities</div><div class="v">${S.stamps.length}/${CITIES.length}</div></div>
+  </div>
+  <h2>Stamps</h2>
+  <div class="stamps">${CITIES.map(([c, n], i) => `<div class="stamp ${S.stamps.includes(c) ? "got" : ""}" style="--rot:${(i * 37) % 17 - 8}deg"><span><b>${c}</b>${esc(n)}</span></div>`).join("")}</div>
+  <button class="btn" data-act="reset-ask" style="align-self:flex-start">Start a new life</button>`;
+}
+
+function viewScene() {
+  const sc = S.scene, ev = sc.ev, left = DUR - sc.min, cur = sc.cur ? guest(sc.cur) : null;
+  let people = present();
+  if (sc.filter === "met") people = people.filter(g => g.stage > 0);
+  if (sc.filter === "new") people = people.filter(g => g.stage === 0);
+  if (sc.q) people = people.filter(g => (g.look + " " + g.beh + (g.stage ? " " + g.name : "")).toLowerCase().includes(sc.q.toLowerCase()));
+  const over = left < APPROACH;
+  const stages = ["", "Introduced", "Small talk", "Getting real", "Invitation"];
+  return `
+  <section class="scene-head">
+    <div class="row"><span class="tier r${ev.tier}" style="background:var(--rc)">${TIERS[ev.tier].tag}</span><span class="label">${ev.city} · ${esc(CITY[ev.city])}</span></div>
+    <h2>${esc(ev.title)}</h2>
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div><div class="clock">${clock(sc.min)}</div><div class="small muted">${left} min left · ${present().length} still here</div></div>
+      <button class="btn ${over ? "red" : ""}" data-act="end">${over ? "See how it went" : "Leave the party"}</button>
+    </div>
+    <div class="progress"><span style="width:${sc.min / DUR * 100}%"></span></div>
+  </section>
+  ${cur ? `
+  <section class="card convo stack">
+    <div class="row" style="justify-content:space-between"><div><span class="label">Talking to</span><h3>${esc(cur.name)}</h3></div>
+      <div class="stage-dots" aria-label="${stages[cur.stage]}">${[1, 2, 3, 4].map(i => `<span class="${cur.stage >= i ? "on" : ""}"></span>`).join("")}</div></div>
+    <p class="small muted">${esc(cur.look)}, ${esc(cur.beh)}.${cur.stage >= 2 ? ` They said: "${esc(cur.claim)}"` : ""}</p>
+    <div class="row">
+      <button class="btn primary" data-act="talk" ${left < TALK ? "disabled" : ""}>Keep talking<span class="cost">10 min</span></button>
+      <button class="btn" data-act="walk">Walk away</button>
+    </div>
+  </section>` : ""}
+  <section class="log" aria-live="polite">${sc.log.slice(0, 4).map(l => `<p class="${l.cls}">${esc(l.text)}</p>`).join("")}</section>
+  ${over ? "" : `
+  <section class="stack">
+    <div class="row" style="justify-content:space-between"><h3>Who's here</h3><span class="small muted">Approach: 5 min</span></div>
+    <input class="search" id="q" type="search" placeholder="Filter by looks, e.g. host, suit, water" value="${esc(sc.q)}" aria-label="Filter guests">
+    <div class="filters">${[["all", "Everyone"], ["new", "Not met"], ["met", "Met"]].map(([k, l]) => `<button data-act="filter" data-v="${k}" aria-pressed="${sc.filter === k}">${l}</button>`).join("")}</div>
+    <div class="guests">${people.map(g => `
+      <button class="guest ${g.stage ? "met" : ""} ${g.id === sc.cur ? "current" : ""}" data-act="guest" data-v="${g.id}">
+        <span class="num">#${g.id}</span>
+        <span class="desc">${g.stage ? `<b>${esc(g.name)}</b>` : ""}${esc(g.look)}, ${esc(g.beh)}</span>
+        <span class="small muted">${g.stage ? stages[g.stage] : ""}</span>
+      </button>`).join("") || '<div class="empty">Nobody matches that.</div>'}</div>
+  </section>`}`;
+}
+
+function viewAfter() {
+  const A = S.after, all = A.gained.length && A.open.length === A.gained.length;
+  return `
+  <section class="stack">
+    <span class="label">The morning after · Day ${S.day}</span>
+    <h2>${esc(A.ev.title)}</h2>
+    <p class="muted">You met ${A.met} people in ${esc(CITY[A.ev.city])}${A.gained.length ? ` and left with ${A.gained.length} card${A.gained.length > 1 ? "s" : ""}. Tap each to see who they really are.` : ", but nobody gave you a card."}</p>
+  </section>
+  ${A.gained.length ? `<div class="reveal-grid">${A.gained.map(c => {
+    const open = A.open.includes(c.id);
+    return `<button class="flipcard r${c.tier} ${open ? "open" : ""}" data-act="flip" data-v="${c.id}" aria-label="${open ? esc(c.name) : "Reveal " + esc(c.name)}">
+      <span class="in">
+        <span class="face back"><span>${esc(c.name)}<br><span class="small muted">tap to reveal</span></span></span>
+        <span class="face front"><span class="row"><span class="tier">${TIERS[c.tier].tag}</span><span class="stars">${TIERS[c.tier].stars}</span></span>
+          <b>${esc(c.name)}</b><span class="small">${esc(c.occ)}</span>
+          <span class="small ${c.tier > 1 ? "" : "muted"}" style="color:${c.tier > 1 ? "var(--good)" : ""}">${c.tier > 1 ? "Can offer " + esc(c.offer) : "Dead end: " + esc(c.offer)}</span></span>
+      </span></button>`;
+  }).join("")}</div>` : ""}
+  ${!A.gained.length || all ? `
+  <section class="card stack">
+    ${A.invites.length ? `<h3>Invitations</h3><div class="stack">${A.invites.map(e => `<div class="row"><span class="tier r${e.tier}" style="background:var(--rc)">${TIERS[e.tier].tag}</span><span class="small">${esc(e.title)} · ${esc(CITY[e.city])} · day ${e.day} <span class="muted">from ${esc(e.host)}</span></span></div>`).join("")}</div>` : ""}
+    <div class="row" style="justify-content:space-between"><span>Miles earned</span><b class="chip">+${fmt(A.miles)} mi</b></div>
+    ${A.isNewCity ? `<p class="small">New passport stamp: <b>${A.ev.city}</b> ${esc(CITY[A.ev.city])} (+100 mi included).</p>` : ""}
+    <button class="btn primary block" data-act="after-done">Back to the agenda</button>
+  </section>` : `<button class="btn block" data-act="flip-all">Reveal all</button>`}`;
+}
+
+function render() {
+  if (S.scene && S.tab !== "scene") S.tab = "scene";
+  if (!S.scene && S.tab === "scene") S.tab = "agenda";
+  if (!S.after && S.tab === "after") S.tab = "agenda";
+  renderTop(); renderTabs();
+  const v = { board: viewBoard, agenda: viewAgenda, contacts: viewContacts, passport: viewPassport, scene: viewScene, after: viewAfter }[S.tab] || viewBoard;
+  $("#view").innerHTML = v();
+}
+
+function guestSheet(id) {
+  const g = guest(id), sc = S.scene, left = DUR - sc.min;
+  const isCur = sc.cur === id;
+  openSheet(`
+    <div class="row" style="justify-content:space-between"><span class="label">Guest #${g.id}</span><button class="btn" data-act="close">Close</button></div>
+    <h2>${g.stage ? esc(g.name) : "Someone you haven't met"}</h2>
+    <p>${esc(g.look[0].toUpperCase() + g.look.slice(1))}, with ${esc(g.acc)}. Right now they are ${esc(g.beh)}.</p>
+    ${g.stage >= 2 ? `<p class="muted">They told you: "${esc(g.claim)}"</p>` : ""}
+    ${g.card ? '<p class="small"><span class="tag good">Card in your contacts</span></p>' : ""}
+    ${isCur ? '<p class="small muted">You are talking to them now.</p>' :
+      `<button class="btn primary block" data-act="approach" data-v="${g.id}" ${left < APPROACH ? "disabled" : ""}>${g.stage ? "Go back to them" : "Approach"}<span class="cost">5 min</span></button>`}`);
+}
+
+function contactSheet(id) {
+  const c = S.contacts.find(x => x.id === id), T = TIERS[c.tier];
+  openSheet(`
+    <div class="row" style="justify-content:space-between"><span class="row"><span class="tier r${c.tier}" style="background:var(--rc)">${T.tag}</span><span class="stars r${c.tier}">${T.stars}</span></span><button class="btn" data-act="close">Close</button></div>
+    <h2>${esc(c.name)}</h2>
+    <p>${esc(c.occ)}</p>
+    <p class="muted">"${esc(c.note)}"</p>
+    <p class="small">Met on day ${c.day} in ${esc(CITY[c.met])}.</p>
+    <p class="small" style="color:${c.tier > 1 ? "var(--good)" : "var(--bad)"}">${c.tier > 1 ? "Can offer " : "Realistically: "}${esc(c.offer)}.</p>`);
+}
+
+// ---------------------------------------------------------------- events
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]");
+  if (!b) { if (e.target.id === "scrim") closeSheet(); return; }
+  const v = b.dataset.v, act = b.dataset.act;
+  switch (act) {
+    case "tab": S.tab = v; S.lastPull = v === "board" ? S.lastPull : []; save(); render(); window.scrollTo(0, 0); break;
+    case "pull": pull(+v); break;
+    case "attend": attend(v); break;
+    case "wait": waitDay(); break;
+    case "guest": guestSheet(+v); break;
+    case "approach": approach(+v); break;
+    case "talk": talk(); break;
+    case "walk": { const g = guest(S.scene.cur); sceneLog(`You excuse yourself from ${g.name}.`, "sys"); S.scene.cur = null; save(); render(); break; }
+    case "filter": S.scene.filter = v; save(); render(); break;
+    case "end": endScene(); break;
+    case "flip": if (!S.after.open.includes(v)) { S.after.open.push(v); save(); render(); } break;
+    case "flip-all": S.after.open = S.after.gained.map(c => c.id); save(); render(); break;
+    case "after-done": S.after = null; S.tab = "agenda"; save(); render(); window.scrollTo(0, 0); break;
+    case "contact": contactSheet(v); break;
+    case "close": closeSheet(); break;
+    case "reset-ask": openSheet(`<h2>Start a new life?</h2><p class="muted">This wipes your contacts, agenda, stamps and miles on this device.</p>
+      <div class="row"><button class="btn red" data-act="reset">Start over</button><button class="btn" data-act="close">Keep playing</button></div>`); break;
+    case "reset": S = fresh(); save(); closeSheet(); render(); toast("New arrival in Lisbon. Good luck."); break;
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.id !== "q" || !S.scene) return;
+  S.scene.q = e.target.value;
+  const pos = e.target.selectionStart;
+  render();
+  const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(pos, pos); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+render();
+</script>
