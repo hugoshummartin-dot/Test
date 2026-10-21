@@ -211,6 +211,14 @@ p { margin: 0; }
 .read-bar > span { background: var(--blue); }
 .mini-read { display: block; width: 44px; height: 4px; margin-top: 4px; margin-left: auto; background: var(--line); border-radius: 2px; overflow: hidden; }
 .mini-read > span { display: block; height: 100%; background: var(--blue); }
+.thread { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding: 4px 0; }
+.bubble { max-width: 85%; padding: 8px 11px; border-radius: 14px; font-size: 14px; line-height: 1.35; }
+.bubble.you { align-self: flex-end; background: var(--ink); color: var(--bg); border-bottom-right-radius: 4px; }
+.bubble.them { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.sys { align-self: center; color: var(--muted); font-size: 12px; padding: 2px; }
+.dots { display: inline-flex; gap: 4px; }
+.dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.dots span.on { background: var(--red); }
 .guest.current { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
 .guest.met .num { color: var(--blue); }
 .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
@@ -292,18 +300,182 @@ const REACH = { 1: 0, 2: 1, 3: 3, 4: 8 };
 const LEVELS = [[0,"Tourist"],[2,"Exchange student"],[6,"Intern abroad"],[14,"Young professional"],[30,"Global insider"],[60,"Pocket Expat legend"]];
 const PULL = 100, PULL10 = 900, STIPEND = 50, FLIGHT = 100, START_MILES = 1200;
 const SR_PITY = 10, SSR_PITY = 60;
-// PLACEHOLDERS pending the creator's spec: chance a draw is a speaking engagement, number of
-// speaking levels, successes needed at a level to unlock the next. Performance is a minigame (to be defined).
-const TALK_RATE = .02, TALK_LEVELS = 3, TALK_UNLOCK = 3;
+// Chance that a draw is a speaking engagement instead of an event.
+const TALK_RATE = .02;
 // PLACEHOLDERS: share of picky guests, share who won't talk to you empty-handed, how many outfits a picky guest likes.
 const PICKY_SHARE = .5, NEEDS_GLASS = .4, OUTFITS_LIKED = 7;
 const DRINKS = ["water", "juice", "wine"];
-// PLACEHOLDERS: the creator writes the speaking questions and answers. Each answer is [text, points].
-// A talk passes when it scores at least TALK_PASS of the maximum; a pass counts as a success.
-const TALK_PASS = .6;
-const TALK_QUESTIONS = Object.fromEntries([1, 2, 3].map(l => [l, [1, 2, 3].map(n => ({
-  q: `[Placeholder] Level ${l} · Question ${n}`, a: [["Answer A", 2], ["Answer B", 1], ["Answer C", 0]],
-}))]));
+// ---------------------------------------------------------------- speaking
+// Formats unlock by level. Each draws `qs` questions from its own pool; a talk passes at `pass`
+// of the top score. A pass pays `reward` cards, adds a CV entry worth `cv` credibility and, for
+// the big formats, a contact of tier `contact`.
+const TALK_TYPES = [
+  { id: "lightning", level: 1, name: "Lightning talk", venue: "the back room of a meetup", blurb: "Five minutes, twenty slides, no mercy.", qs: 3, pass: .5, reward: 80, cv: 1 },
+  { id: "podcast", level: 1, name: "Podcast guest spot", venue: "a recording booth that used to be a cupboard", blurb: "Forty minutes with a host who skimmed your bio in the lift.", qs: 3, pass: .6, reward: 100, cv: 1 },
+  { id: "panel", level: 2, name: "Panel discussion", venue: "a conference side room", blurb: "Four panellists, one microphone, and a moderator who has read none of your work.", qs: 4, pass: .6, reward: 200, cv: 2 },
+  { id: "paper", level: 2, name: "Conference paper", venue: "Room B, straight after lunch", blurb: "Twenty minutes, a discussant, and a regression table nobody asked for.", qs: 4, pass: .65, reward: 220, cv: 2 },
+  { id: "roundtable", level: 3, name: "Policy roundtable", venue: "a wood-panelled room under Chatham House rules", blurb: "Nobody may quote you. Everybody will.", qs: 5, pass: .65, reward: 400, cv: 3, contact: 3 },
+  { id: "keynote", level: 4, name: "Keynote", venue: "the main stage", blurb: "A lectern, a spotlight and nine hundred lanyards looking up.", qs: 5, pass: .7, reward: 1000, cv: 5, contact: 4 },
+];
+const TALK_LEVELS = 4, TALK_UNLOCK = 3;
+const CV_NEEDED = { 2: 3, 3: 8, 4: 15 };   // CV credibility needed (on top of successes) to unlock each level
+
+// Question pools per format. Each answer is [text, points]; answer order is shuffled on stage.
+const TALK_POOLS = {
+  lightning: [
+    { q: "The timer says 3:40. You are on slide 2 of 19.", a: [["Skip to your conclusion and say it like you meant to.", 2], ["Talk faster. Much faster.", 1], ["Ask the organiser for 'just a couple more minutes'.", 0]] },
+    { q: "The clicker dies mid-sentence.", a: [["Say 'next slide, please' with the calm of an airline pilot.", 2], ["Walk back to the laptop after every slide.", 1], ["Blame the venue Wi-Fi, at length.", 0]] },
+    { q: "How do you open?", a: [["One surprising number from your research.", 2], ["A joke about how nervous you are.", 1], ["'So, um, basically, I'm, like…'", 0]] },
+    { q: "Someone at the back asks whether this is 'even research'.", a: [["'It's a pilot study. You're in the pilot.'", 2], ["Re-explain your methodology from the beginning.", 1], ["Concede that it probably isn't.", 0]] },
+    { q: "Your last slide is…", a: [["One takeaway and your email address.", 2], ["Thirty references in 7-point font.", 1], ["A photo of your cat, for no stated reason.", 0]] },
+    { q: "The previous speaker overran by four minutes and the room is restless.", a: [["Acknowledge it with one dry line, then move briskly.", 2], ["Pretend nothing happened.", 1], ["Spend a minute complaining about it.", 0]] },
+  ],
+  podcast: [
+    { q: "The host introduces you as 'an expert on, uh, stuff'.", a: [["Fill in the blank graciously, in one sentence.", 2], ["Read out your full title, affiliation and citation count.", 1], ["'Yes. Stuff. Lots of it.'", 0]] },
+    { q: "'What's the one thing our listeners should take away?'", a: [["One concrete, quotable point.", 2], ["Three things, each with sub-points.", 1], ["'Honestly? It's complicated.'", 0]] },
+    { q: "The host's dog starts barking mid-answer.", a: [["Pause, laugh, pick up exactly where you left off.", 2], ["Keep talking over it, louder.", 1], ["Ask what the dog thinks.", 0]] },
+    { q: "You're asked about something entirely outside your field.", a: [["'Not my lane, but here's what I'd ask someone whose lane it is.'", 2], ["Steer gently back to your topic.", 1], ["Improvise with total confidence.", 0]] },
+    { q: "'Where can people find you?'", a: [["Your latest article and one handle.", 2], ["Nowhere. Modesty is a virtue.", 1], ["Five social networks and your cousin's bakery.", 0]] },
+    { q: "It becomes clear the host hasn't read your paper.", a: [["Summarise it in two lines and make the host look good.", 2], ["Offer to send it over afterwards.", 1], ["Gasp audibly.", 0]] },
+  ],
+  panel: [
+    { q: "The moderator asks you a question clearly meant for the person next to you.", a: [["Pass it over gracefully, then add one sharp point.", 2], ["Answer it anyway.", 1], ["'I'll defer to my colleague,' and nothing else.", 0]] },
+    { q: "A fellow panellist has been speaking for eleven minutes.", a: [["Wait for a breath, then bring it back to the question in one line.", 2], ["Cut in with 'just a quick point'.", 1], ["Check your phone under the table.", 0]] },
+    { q: "Q&A: 'This is more of a comment than a question…'", a: [["Thank them and find the question hidden inside.", 2], ["Respond to the comment at equal length.", 1], ["Point out that it isn't a question.", 0]] },
+    { q: "You disagree with the keynote speaker, who is sitting in the front row.", a: [["Disagree courteously, with evidence.", 2], ["Agree, then disagree in a footnote.", 1], ["Disagree, with adjectives.", 0]] },
+    { q: "The moderator asks for closing thoughts in one word.", a: [["A word that sums up your argument.", 2], ["A hyphenated word of eleven syllables.", 1], ["'Pass.'", 0]] },
+    { q: "Your microphone was off during your best line.", a: [["Repeat it, unhurried.", 2], ["Assume they got the gist.", 1], ["Mime it.", 0]] },
+  ],
+  paper: [
+    { q: "The discussant summarises your paper. It is not your paper.", a: [["Thank them, then gently restate your actual argument.", 2], ["Let it go. Nobody will notice.", 1], ["Correct them point by point for ten minutes.", 0]] },
+    { q: "You spot Reviewer 2 in the third row.", a: [["Address their objection before they can raise it.", 2], ["Avoid eye contact for twenty minutes.", 1], ["Dedicate a slide to them.", 0]] },
+    { q: "Your key slide is a regression table.", a: [["Highlight the one coefficient that matters.", 2], ["Apologise for it.", 1], ["Read every row aloud.", 0]] },
+    { q: "The session chair holds up a card: TWO MINUTES.", a: [["Jump to findings and implications.", 2], ["Speed-read the remaining slides.", 1], ["Nod and carry on at the same pace.", 0]] },
+    { q: "'Have you considered…' — followed by your entire literature review.", a: [["'Yes, section two. I'd love your view on how I handled it.'", 2], ["'Great question. I'll look into it.'", 1], ["'Did you read the paper?'", 0]] },
+    { q: "Someone asks whether they can see your data.", a: [["'Of course. It's all in the replication files.'", 2], ["'Email me.' (You won't reply.)", 1], ["Laugh nervously until they sit down.", 0]] },
+  ],
+  roundtable: [
+    { q: "Chatham House rules apply. The person opposite is live-posting.", a: [["Say nothing you wouldn't defend in print.", 2], ["Lower your voice when it matters.", 1], ["Address your answer to their phone.", 0]] },
+    { q: "A deputy minister asks for 'something actionable by Thursday'.", a: [["Three concrete recommendations, costed.", 2], ["A framework with seven pillars.", 1], ["'With respect, policy takes time.'", 0]] },
+    { q: "The room splits into two camps. Both look at you.", a: [["Name what both sides agree on, then the real trade-off.", 2], ["Ask for more data.", 1], ["Pick the side with the better pastries.", 0]] },
+    { q: "Someone cites your paper — wrongly — in support of their view.", a: [["Correct the record briefly and kindly.", 2], ["Let it stand. A citation is a citation.", 1], ["Agree, since it's flattering.", 0]] },
+    { q: "The chair asks you to sum up the discussion.", a: [["Two sentences, no names, one next step.", 2], ["A recap of everything everybody said.", 1], ["A summary of your own contribution.", 0]] },
+    { q: "An ambassador asks what you would do in their position.", a: [["Answer honestly, with one caveat.", 2], ["Reframe the question.", 1], ["'Resign, probably.'", 0]] },
+    { q: "The coffee runs out at 10:40.", a: [["Carry on. You're there for the substance.", 2], ["Suggest a short break.", 1], ["Leave to find coffee and miss the key vote.", 0]] },
+  ],
+  keynote: [
+    { q: "The walk-on music is not the song you chose.", a: [["Smile, let it fade, begin.", 2], ["Dance a little.", 1], ["Ask the tech desk to start again.", 0]] },
+    { q: "The teleprompter freezes on your second paragraph.", a: [["Speak from your notes and your conviction.", 2], ["Read the frozen paragraph again, slower.", 1], ["Stare at it until it moves.", 0]] },
+    { q: "How do you open in front of nine hundred people?", a: [["A short story with a sharp turn.", 2], ["Thank all seventeen sponsors by name.", 1], ["'Can everyone hear me at the back?' (They can.)", 0]] },
+    { q: "Halfway through, you notice the minister in the front row is asleep.", a: [["Raise your voice slightly on the next key point.", 2], ["Carry on as before.", 1], ["Address your next remark directly to the minister.", 0]] },
+    { q: "The event photographer needs 'one with the arms open'.", a: [["Find a natural moment for it.", 2], ["Do it at once, mid-sentence.", 1], ["Refuse on principle.", 0]] },
+    { q: "You have one slide left and three minutes.", a: [["Land the big idea and finish early.", 2], ["Spend all three minutes on that slide.", 1], ["Introduce a new topic.", 0]] },
+    { q: "A standing ovation starts, hesitantly, in one corner.", a: [["A brief thank-you, then step away.", 2], ["Wait for the rest of the room to join.", 1], ["Begin an encore.", 0]] },
+  ],
+};
+
+// ---------------------------------------------------------------- people: names, pronouns, looks
+const NAMES = {
+  m: ["Alain","Arjun","Bram","Dario","Dmitri","Emeka","Fabian","Felix","Hamid","Hugo","Isak","Jonas","Kenji","Lars","Luca","Malik","Mateo","Nico","Oscar","Pieter","Quentin","Rafael","Soren","Tariq","Tomas","Ugo","Viktor","Xavier","Yusuf","Bongani","Emre","Kwame","Mehmet","Omar","Siddharth","Wei","Chen","Bence","Ádám","Levente"],
+  f: ["Ada","Amara","Anouk","Beatriz","Camille","Chiara","Delphine","Elena","Esther","Farah","Greta","Hana","Ines","Josephine","Leila","Mai","Margot","Mira","Nadia","Olga","Paloma","Priya","Rosa","Selin","Thea","Valentina","Wanda","Yara","Zoe","Aiko","Dalia","Fatou","Giulia","Lucía","Nia","Rania","Thandi","Ximena","Zainab","Réka","Zsófia"],
+  n: ["Sacha","Noor","Ji-woo","Alex","Robin","Kai","Sam","Charlie","Ari","Rowan","Eden","Jules"],
+};
+// Surnames; "a|b" gives the masculine and feminine forms.
+const SURNAMES = ["Albers","Bakker","Benali","Castell","Costa","Dubois","Eriksen","Ferreira","Fontaine","Gallo","Hartmann","Haddad","Ivanov|Ivanova","Jansen","Kaur","Keller","Laurent","Lindqvist","Marchetti","Moreau","Nakamura","Novák|Nováková","Okafor","Oyelaran","Petrov|Petrova","Quist","Rahman","Rossi","Santos","Schmidt","Silva","Takahashi","Toussaint","Ullman","Varga","Vermeulen","Weber","Wright","Yilmaz","Zanetti","Kim","Mensah","Ortega","Park","Mwangi","Demir","Nair","Ramírez","Chowdhury","Dlamini","Szabó","Nagy","Kovács","Tóth","Horváth"];
+function makeName(sex) {
+  const forms = pick(SURNAMES).split("|");
+  const last = forms.length === 1 ? forms[0] : sex === "f" ? forms[1] : sex === "m" ? forms[0] : pick(forms);
+  return pick(NAMES[sex]) + " " + last;
+}
+const PRON = {
+  m: { they: "he", them: "him", their: "his", theyre: "he's", s: "s", es: "es", ies: "ies", is: "is", have: "has" },
+  f: { they: "she", them: "her", their: "her", theyre: "she's", s: "s", es: "es", ies: "ies", is: "is", have: "has" },
+  n: { they: "they", them: "them", their: "their", theyre: "they're", s: "", es: "", ies: "y", is: "are", have: "have" },
+};
+// Fill {they} {Their} {s} {is} … for a person's pronouns; other {tokens} are left alone.
+function pr(text, sex) {
+  const p = PRON[sex || "n"];
+  return text.replace(/\{(\w+)\}/g, (m, k) => {
+    const v = p[k.toLowerCase()];
+    if (v === undefined) return m;
+    return k[0] !== k[0].toLowerCase() ? v[0].toUpperCase() + v.slice(1) : v;
+  });
+}
+const FIGURE = { m: "man", f: "woman", n: "person" };
+// [text, sexes it suits]
+const HAIR = [
+  ["close-cropped hair", "mfn"], ["a sleek bob", "fn"], ["an immaculate beard", "m"], ["a topknot held in place by a pencil", "mfn"],
+  ["hair that has clearly seen a lot of airports", "mfn"], ["a fresh conference-hotel haircut", "mfn"], ["tight curls", "mfn"],
+  ["a heroic quiff", "mfn"], ["a moustache with its own agenda", "m"], ["a long braid", "fn"], ["a shaved head", "mfn"],
+  ["unruly curls", "mfn"], ["a sharp undercut", "mfn"], ["hair pinned up with what looks like a chopstick", "fn"],
+];
+// verb phrases; [text, w_interesting, w_clueless, w_useless]
+const EXPRESSIONS = [
+  ["look{s} faintly amused by everything", 3, 1, 1], ["wear{s} the fixed smile of someone at {their} fourth event this week", 1, 2, 3],
+  ["{have} the alert stillness of someone who chairs committees", 4, 1, .5], ["seem{s} to be rehearsing a pitch under {their} breath", .3, 1, 4],
+  ["look{s} pleasantly lost", .5, 4, 1], ["keep{s} checking {their} reflection in the window", .5, 1, 3],
+  ["radiate{s} the calm of a person with tenure", 4, 1, .5], ["look{s} as if {they} would rather be at home with a book", 2, 3, .5],
+  ["scan{s} the room like a buyer at an auction", 3, .5, 2], ["{is} wearing a name badge with the name crossed out and rewritten", .5, 3, 2],
+];
+// overheard fragments; [text, w_interesting, w_clueless, w_useless]
+const OVERHEARD = [
+  ["…the minister's office still hasn't read the annex…", 4, .3, 1], ["…we're funding three of those next year, quietly…", 4, .2, 1],
+  ["…tell Vienna the paper's ready on Thursday…", 4, .3, .5], ["…no, the board meets in Geneva, not here…", 3, .5, 1],
+  ["…I'll introduce you to the editor, remind me later…", 3, .5, 1], ["…the second draft was better, but don't tell the author…", 3, .5, .5],
+  ["…it's basically Uber, but for networking…", .3, .5, 4], ["…I don't do small talk. I do BIG talk…", .2, .5, 4],
+  ["…my mentor? I mentor myself…", .2, .5, 4], ["…we're disrupting the canapé space…", .2, .5, 4],
+  ["…it's not a pyramid, it's a triangle of opportunity…", .1, .5, 4], ["…let's take this offline. Then back online…", .3, .5, 3],
+  ["…do you know if there's a cloakroom…", .5, 4, 1], ["…I thought this was the dentists' thing…", .2, 4, .5],
+  ["…the little salmon ones are the best…", .5, 4, 1], ["…my bus is at ten, so…", .5, 4, .5],
+  ["…who's the one everyone keeps talking to…", .5, 4, 1], ["…is it rude to take two…", .5, 4, 1],
+];
+
+// ---------------------------------------------------------------- contacts: messages, replies, opportunities
+const MSG = {
+  thanks: ["Thank-you note", "Lovely to meet you at {event}. Thank you for your time."],
+  advice: ["Ask for advice", "Could I ask your advice on getting started in your field?"],
+  article: ["Share your article", "I've just published a short piece. Thought it might interest you."],
+  job: ["Ask for a job", "Are you hiring? I'm available immediately. Also tomorrow."],
+  coffee: ["Suggest a coffee", "Would you have twenty minutes for a coffee next week? My treat."],
+  followup: ["Follow up", "Following up on what you mentioned at {event}. Is that still on the table?"],
+  meme: ["Send a meme", "Saw this and thought of you. [a meme about committee meetings]"],
+  congrats: ["Congratulate", "Congratulations on the recent news. Thoroughly deserved."],
+};
+const TASTES = {
+  interesting: { like: ["thanks", "advice", "followup", "coffee", "congrats", "article"], hate: ["job", "meme"] },
+  useless: { like: ["coffee", "meme", "job", "congrats"], hate: ["article", "advice", "followup"] },
+  clueless: { like: ["meme", "thanks", "coffee", "congrats"], hate: ["followup", "job", "article"] },
+};
+const REPLIES = {
+  interesting: {
+    like: ["Good to hear from you. I was hoping you'd write.", "Glad you got in touch. Let's keep talking.", "Thank you. This is exactly the right note.", "Noted, and appreciated. More soon."],
+    meh: ["Thanks. Busy week; I'll come back to you.", "Appreciated.", "Received, thank you."],
+    hate: ["I don't think that's appropriate.", "Let's keep this professional.", "I'm not sure what you're hoping I'll do with this."],
+    gift: "I've got something for you: {opp}.",
+  },
+  useless: {
+    like: ["LOVE this. Let's hop on a call. Or three.", "You get it. You really get it.", "Synergy!! Sending you a calendar invite for 6 a.m."],
+    meh: ["Amazing. Circle back?", "Big if true.", "Let me run it past my network."],
+    hate: ["Not sure that aligns with my brand.", "I'll have my assistant look at it. (I am the assistant.)"],
+    gift: "Huge opportunity for you, don't tell anyone: {opp}.",
+  },
+  clueless: {
+    like: ["Haha yes!! Hope you're well!", "Oh nice, thanks! Good to hear from you!", "Ha! Brilliant."],
+    meh: ["Sorry, who is this?", "Thanks :)", "Oh! Okay."],
+    hate: ["I don't really know about that stuff, sorry.", "I'm not sure I'm the right person for that."],
+    gift: "Oh, I might actually have something? {opp}.",
+  },
+  bugged: ["Seen.", "Per my last message…", "As I said, I'll get back to you.", "Please give me a few days."],
+};
+const MSG_COOLDOWN = 2, PATIENCE = 3, RAPPORT_FOR_OPP = 2;
+const MAX_OPPS = { 1: 1, 2: 1, 3: 2, 4: 3 }, CRED = { 1: 0, 2: 1, 3: 2, 4: 3 };
+// [what they offer you, how it reads on your CV]
+const EXTRA_OPPS = {
+  3: [["a co-authored working paper, if you'll do the footnotes", "Co-authored a working paper with {name}"], ["an op-ed slot in a national outlet", "Op-ed in a national outlet, via {name}"],
+      ["a guest lecture at my summer school", "Guest lecture at {name}'s summer school"], ["a seat on my advisory committee", "Advisory committee member, chaired by {name}"]],
+  4: [["a commissioned report for the foundation", "Commissioned report for {name}'s foundation"], ["a visiting fellowship, starting next term", "Visiting fellowship arranged by {name}"],
+      ["a byline in an international outlet", "Byline in an international outlet, via {name}"]],
+};
 
 // Event titles per tier. Common ones sound grand; the venue gives them away.
 const EVENTS = {
@@ -330,12 +502,8 @@ const EVENTS = {
   ],
 };
 
-const FIRST = ["Ada","Alain","Amara","Anouk","Arjun","Beatriz","Bram","Camille","Chiara","Dario","Delphine","Dmitri","Elena","Emeka","Esther","Fabian","Farah","Felix","Greta","Hamid","Hana","Hugo","Ines","Isak","Jonas","Josephine","Kenji","Lars","Leila","Luca","Mai","Malik","Margot","Mateo","Mira","Nadia","Nico","Noor","Olga","Oscar","Paloma","Pieter","Priya","Quentin","Rafael","Rosa","Sacha","Selin","Soren","Tariq","Thea","Tomas","Ugo","Valentina","Viktor","Wanda","Xavier","Yara","Yusuf","Zoe","Aiko","Bongani","Chen","Dalia","Emre","Fatou","Giulia","Ji-woo","Kwame","Lucía","Mehmet","Nia","Omar","Pita","Rania","Siddharth","Thandi","Wei","Ximena","Zainab"];
-const LAST = ["Albers","Bakker","Benali","Castell","Costa","Dubois","Eriksen","Ferreira","Fontaine","Gallo","Hartmann","Haddad","Ivanova","Jansen","Kaur","Keller","Laurent","Lindqvist","Marchetti","Moreau","Nakamura","Novak","Okafor","Oyelaran","Petrov","Quist","Rahman","Rossi","Santos","Schmidt","Silva","Takahashi","Toussaint","Ullman","Varga","Vermeulen","Weber","Wright","Yilmaz","Zanetti","Kim","Mensah","Ortega","Park","Mwangi","Demir","Nair","Ramírez","Chowdhury","Dlamini"];
-
 // appearance pools: [text, w_interesting, w_clueless, w_useless]
 const AGES = [["young",1,3,3],["thirty-something",2,2,3],["middle-aged",3,2,2],["grey-haired",3,2,1],["elderly",1,2,.5]];
-const FIGURES = [["man",1,1,1],["woman",1,1,1],["person",.3,.3,.3]];
 const OUTFITS = [
   ["a sharply tailored charcoal suit",3,1,3],["an understated navy blazer",4,2,1],["a crumpled linen jacket",2,3,1],
   ["a sequinned jacket",1,1,4],["a black turtleneck",3,1,2],["jeans and a band T-shirt",1,3,1],["a silk dress",2,2,2],
@@ -345,13 +513,13 @@ const OUTFITS = [
 const BEHAVIOURS = [
   ["talking quietly with the host",5,.5,1],["loudly telling a story to a shrinking circle",.5,1,5],["hovering by the canapés",.5,4,2],
   ["glancing at the door as if about to leave",3,1,1],["handing out business cards to anyone nearby",.5,.5,5],
-  ["listening more than talking",4,2,.5],["scrolling through their phone in a corner",1,4,2],["laughing a bit too loudly",.5,2,3],
+  ["listening more than talking",4,2,.5],["scrolling through {their} phone in a corner",1,4,2],["laughing a bit too loudly",.5,2,3],
   ["being greeted by several people in turn",4,1,2],["studying the artwork on the walls",2,3,1],
   ["on what looks like a third glass of champagne",.5,3,3],["nursing a sparkling water",3,2,1],
   ["taking selfies with the room in the background",.2,2,4],["waiting for someone to talk to",1,4,1],
 ];
 const ACCESSORIES = [
-  ["an expensive but discreet watch",3,1,2],["a lanyard from an unrelated conference",.5,3,2],["reading glasses pushed up on their head",2,2,1],
+  ["an expensive but discreet watch",3,1,2],["a lanyard from an unrelated conference",.5,3,2],["reading glasses pushed up on {their} head",2,2,1],
   ["a gold chain",.5,1,3],["a battered leather notebook",3,2,1],["a tote bag full of flyers",.2,1,4],
   ["a lapel pin you don't recognise",2,1,2],["a phone in each hand",1,.5,3],["nothing remarkable",2,3,2],
 ];
@@ -389,11 +557,11 @@ const ROLES = {
     ["I run a networking collective.","Runs a group chat","We're like this party, but better. And more often.","more parties minus the interesting people"],
     ["I'm launching a startup. Stealth mode.","Has a domain name and a logo","Need a co-founder. Equity only. Could be you.","months of unpaid work for 0.5% of nothing"],
     ["I consult. For various clients.","Between jobs, creatively","I could probably get you some work. Probably.","vague promises"],
-    ["I'm an art dealer, sort of.","Sells prints of their own paintings","You should buy something now, before I'm famous.","a sales pitch"],
-    ["Motivational speaker.","Spoke once, at a wedding","Come to my talk. It'll change how you see yourself.","a ticket to their talk"],
+    ["I'm an art dealer, sort of.","Sells prints of {their} own paintings","You should buy something now, before I'm famous.","a sales pitch"],
+    ["Motivational speaker.","Spoke once, at a wedding","Come to my talk. It'll change how you see yourself.","a ticket to {their} talk"],
   ],
   clueless: [
-    ["I'm just the plus-one, honestly.","Plus-one of someone who already left","No idea who most of these people are, to be honest.","nothing, though they mean well"],
+    ["I'm just the plus-one, honestly.","Plus-one of someone who already left","No idea who most of these people are, to be honest.","nothing, though {they} mean{s} well"],
     ["I'm on exchange too!","Student, as lost as you are","Do you know who the important people are? I was hoping you did.","commiseration"],
     ["I do IT for the caterer.","Off-duty IT technician","Free wine, though, right?","nothing for your career"],
     ["Came for the drinks, to be honest.","Gatecrasher","Have you tried the little salmon things? Amazing.","canapé recommendations"],
@@ -411,9 +579,27 @@ const PITCHES = {
   clueless: ["Come along, it'll be fun!","We're always one short.","There might be snacks.","No pressure, honestly."],
 };
 const SMALL_TALK = {
-  interesting: ["They shake your hand and ask what you're studying — and seem to actually listen.","A measured look, then a small smile. \"You're not one of the usual faces.\"","Polite but brief; you sense you have a few minutes, no more.","They're mid-sentence with someone else, but turn to include you."],
-  useless: ["They grab your hand with both of theirs. \"Love the energy! What's your story?\"","They start talking before you've finished saying hello.","They look over your shoulder twice, then commit with enthusiasm.","\"An exchange student! I LOVE students. So hungry. So driven.\""],
-  clueless: ["They look relieved someone came over.","They offer you a canapé from a napkin they've been saving.","\"Oh, hi! Sorry, do we know each other?\"","They smile warmly and ask if you know where the toilets are."],
+  interesting: [
+    "{They} shake{s} your hand once, firmly, and ask{s} what you're working on, then actually listen{s} to the answer.",
+    "A measured look, then a small smile. \"You're not one of the usual faces. Good.\"",
+    "{They} {is} polite but economical. You sense you have a few minutes, and that {they} {is} counting them.",
+    "{They} {is} mid-sentence with someone from a ministry, but turn{s} to include you without missing a beat.",
+    "{They} glance{s} at your name badge, then at you, and seem{s} to file both away.",
+  ],
+  useless: [
+    "{They} grab{s} your hand in both of {their} own. \"Love the energy! What's your story? Actually, let me tell you mine.\"",
+    "{They} start{s} talking before you've finished saying hello, and {have} not stopped since.",
+    "{They} look{s} over your shoulder twice for someone more important, find{s} no one, and commit{s} to you with enthusiasm.",
+    "\"A student! I LOVE students. So hungry. So driven. So affordable.\"",
+    "{They} hand{s} you a card before telling you {their} name. The card has a QR code and nothing else.",
+  ],
+  clueless: [
+    "{They} look{s} visibly relieved that someone came over.",
+    "{They} offer{s} you a canapé from a napkin {they} {have} been guarding all evening.",
+    "\"Oh, hi! Sorry, do we know each other? I'm terrible with faces. And names. And events.\"",
+    "{They} smile{s} warmly and ask{s} if you know where the cloakroom is.",
+    "{They} {is} holding two plates and explain{s} that one is for a friend who never came back.",
+  ],
 };
 
 // ---------------------------------------------------------------- helpers
@@ -431,6 +617,7 @@ const art = w => (/^[aeiou]/.test(w) ? "an " : "a ") + w;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fmt = n => n.toLocaleString("en-US");
+const cap = t => t[0].toUpperCase() + t.slice(1);
 const initials = n => n.split(" ").map(w => w[0]).join("").slice(0, 2);
 
 // ---------------------------------------------------------------- state
@@ -439,7 +626,7 @@ let S;
 function fresh() {
   const s = {
     day: 1, city: "LIS", miles: START_MILES, tab: "board", pity: 0, pitySSR: 0,
-    agenda: [], contacts: [], stamps: [], talks: [], gig: null, pulls: 0, attended: 0, scene: null, after: null, lastPull: [],
+    agenda: [], contacts: [], stamps: [], talks: [], cv: [], gig: null, pulls: 0, attended: 0, scene: null, after: null, lastPull: [],
   };
   s.agenda.push({
     id: uid(), tier: 1, title: "Welcome Drinks for New Arrivals", venue: "the student residence bar", city: "LIS",
@@ -454,6 +641,7 @@ function load() {
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
 S = load() || fresh();
 S.talks = S.talks || [];
+S.cv = S.cv || [];
 if (S.scene && !S.scene.dur) S.scene.dur = 60;
 if (S.scene && S.scene.ready === undefined) S.scene.ready = true;
 
@@ -477,14 +665,18 @@ function makeEvent(tier, o = {}) {
     host: o.host || "Open call", pitch: o.pitch || "", covered: !!o.covered, revealed: o.revealed !== false, source: o.source || "board",
   };
 }
+function credibility() { return S.cv.reduce((s, e) => s + e.cred, 0); }
+const successes = l => S.talks.filter(t => t.level === l && t.ok).length;
 function talkLevel() {
-  let lvl = 1;
-  while (lvl < TALK_LEVELS && S.talks.filter(t => t.level === lvl && t.ok).length >= TALK_UNLOCK) lvl++;
-  return lvl;
+  let l = 1;
+  while (l < TALK_LEVELS && successes(l) >= TALK_UNLOCK && credibility() >= CV_NEEDED[l + 1]) l++;
+  return l;
 }
-function makeTalk() {
-  return { id: uid(), kind: "talk", level: talkLevel(), tier: 4, title: `Speaking engagement · Level ${talkLevel()}`, venue: "",
-    city: pick(CITIES)[0], day: S.day + ri(3, 10), host: "Open call", pitch: "", covered: false, revealed: true, source: "board" };
+const talkType = e => TALK_TYPES.find(t => t.id === e.type) || TALK_TYPES.find(t => t.level === Math.min(e.level || 1, TALK_LEVELS));
+function makeTalk(o = {}) {
+  const level = talkLevel(), T = pick(TALK_TYPES.filter(t => t.level === level));
+  return { id: uid(), kind: "talk", type: T.id, level, tier: 4, title: T.name, venue: T.venue, city: o.city || pick(CITIES)[0],
+    day: S.day + ri(3, 10), host: o.host || "Open call", pitch: T.blurb, covered: !!o.covered, revealed: true, source: o.host ? "contact" : "board" };
 }
 function pullOne() {
   S.pity++; S.pitySSR++; S.pulls++;
@@ -539,19 +731,21 @@ function makeGuests(ev) {
   const names = new Set(S.contacts.map(c => c.name));
   const roles = [...ROLES.interesting].sort(() => rnd() - .5);
   return kinds.map((kind, i) => {
-    let name; do { name = pick(FIRST) + " " + pick(LAST); } while (names.has(name)); names.add(name);
-    const role = kind === "interesting" ? roles[i % roles.length] : pick(ROLES[kind]);
-    const age = wpick(AGES, kind), fig = wpick(FIGURES, kind), outfit = wpick(OUTFITS, kind);
-    const beh = wpick(BEHAVIOURS, kind), acc = wpick(ACCESSORIES, kind);
+    const r = rnd(), sex = r < .47 ? "m" : r < .94 ? "f" : "n";
+    let name; do { name = makeName(sex); } while (names.has(name)); names.add(name);
+    const role = (kind === "interesting" ? roles[i % roles.length] : pick(ROLES[kind])).map(t => pr(t, sex));
+    const age = wpick(AGES, kind), fig = FIGURE[sex], outfit = wpick(OUTFITS, kind);
+    const beh = pr(wpick(BEHAVIOURS, kind), sex), acc = pr(wpick(ACCESSORIES, kind), sex);
+    const hair = pick(HAIR.filter(h => h[1].includes(sex)))[0], expr = pr(wpick(EXPRESSIONS, kind), sex), heard = wpick(OVERHEARD, kind);
     let tier = 1;
     if (kind === "interesting") {
       const x = rnd(); tier = Math.max(2, ev.tier);
       if (x < .2) tier = Math.min(4, tier + 1); else if (x < .3) tier = Math.max(2, tier - 1);
     }
     return {
-      id: i + 1, name, kind, tier, stage: 0, card: false, invite: false,
-      look: `${art(age)} ${fig} in ${outfit}`, beh, acc,
-      claim: role[0], real: role[1], substance: role[2], offer: role[3], small: pick(SMALL_TALK[kind]),
+      id: i + 1, name, sex, kind, tier, stage: 0, card: false, invite: false,
+      look: `${art(age)} ${fig} in ${outfit}`, beh, acc, hair, expr, heard,
+      claim: role[0], real: role[1], substance: role[2], offer: role[3], small: pr(pick(SMALL_TALK[kind]), sex),
       leaves: Math.round(kind === "interesting" ? ri(20, 100) * k : ri(25, 140) * k), read: null,
       needsGlass: rnd() < NEEDS_GLASS, picky: rnd() < PICKY_SHARE,
       drinks: [...DRINKS].sort(() => rnd() - .5),
@@ -570,7 +764,7 @@ function attend(id) {
   S.agenda = S.agenda.filter(e => e.id !== id);
   const fromCity = S.city;
   S.city = ev.city;
-  if (ev.kind === "talk") { S.gig = ev; S.tab = "gig"; save(); render(); window.scrollTo(0, 0); return; }
+  if (ev.kind === "talk") { startQuiz(ev); S.gig = ev; S.tab = "gig"; save(); render(); window.scrollTo(0, 0); return; }
   S.scene = { ev, min: 0, dur: TIERS[ev.tier].len, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [], ready: false, outfit: S.outfit || OUTFITS[0][0], drink: null };
   const flew = cost ? ` Flight −${cost} business cards.` : ev.city !== fromCity ? " Your host covered the flight." : "";
   sceneLog(`You arrive at ${ev.venue}, ${CITY[ev.city]}. ${TIERS[ev.tier].size} people. You have ${TIERS[ev.tier].len} minutes.${flew}`, "sys");
@@ -589,7 +783,7 @@ function tick(cost) {
   const gone = sc.guests.filter(g => g.leaves > before && g.leaves <= sc.min);
   const anon = [];
   for (const g of gone) {
-    if (g.id === sc.cur) { sceneLog(`${g.name} glances at their watch, apologises and heads for the coat check.`, "sys"); sc.cur = null; }
+    if (g.id === sc.cur) { sceneLog(pr(`${g.name} glances at {their} watch, apologises and heads for the coat check.`, g.sex), "sys"); sc.cur = null; }
     else if (g.stage > 0) sceneLog(`${g.name} has left.`, "sys");
     else anon.push(g);
   }
@@ -606,7 +800,7 @@ function approach(id) {
   }
   sc.cur = id;
   if (g.stage === 0) { g.stage = 1; updateRead(g); sceneLog(`"Hi, I'm ${g.name}." ${g.small}`); }
-  else sceneLog(`You catch ${g.name} again. They remember you.`);
+  else sceneLog(pr(`You catch ${g.name} again. {They} remember{s} you.`, g.sex));
   tick(INTRO); closeSheet(); save(); render();
 }
 
@@ -620,7 +814,7 @@ function talk() {
     g.stage++;
     updateRead(g);
     if (g.stage === 2) {
-      sceneLog(`You ask what they do. "${g.claim}"`);
+      sceneLog(pr(`You ask what {they} do{es}. "${g.claim}"`, g.sex));
     } else if (g.stage === 3) {
       sceneLog(`"${g.substance}"`);
     } else if (g.stage === 4 && g.kind === "useless") {
@@ -639,10 +833,10 @@ const reallyLikes = g => !g.picky || (S.scene.drink === g.drinks[0] && g.outfits
 function offer(g) {
   const cardAt = g.kind === "useless" ? 2 : 3;
   if (g.stage >= cardAt && !g.card) {
-    if (!likes(g)) sceneLog(`${g.name} doesn't offer you their card.`, "sys");
-    else if (g.kind === "interesting") giveCard(g, g.real, `They hand you a plain card: ${g.real}.`);
+    if (!likes(g)) sceneLog(pr(`${g.name} doesn't offer you {their} card.`, g.sex), "sys");
+    else if (g.kind === "interesting") giveCard(g, g.real, pr(`{They} hand{s} you a plain card: ${g.real}.`, g.sex));
     else if (g.kind === "clueless") giveCard(g, g.claim, "You swap numbers, mostly out of politeness.");
-    else giveCard(g, g.claim, "They press a business card into your hand.");
+    else giveCard(g, g.claim, pr("{They} press{es} a glossy business card into your hand.", g.sex));
   }
   if (g.stage >= cardAt + 1 && g.card && !g.invite) {
     if (!reallyLikes(g)) sceneLog(`No invitation from ${g.name}.`, "sys");
@@ -653,7 +847,7 @@ function offer(g) {
 function giveCard(g, occ, text) {
   if (g.card) return sceneLog(text);
   g.card = true;
-  S.scene.gained.push({ id: uid(), name: g.name, occ, note: g.substance, offer: g.offer, tier: g.tier, kind: g.kind, met: S.scene.ev.city, day: S.day });
+  S.scene.gained.push(initContact({ id: uid(), name: g.name, sex: g.sex, occ, note: g.substance, offer: g.offer, tier: g.tier, kind: g.kind, met: S.scene.ev.city, at: `the ${S.scene.ev.title}`, day: S.day }));
   sceneLog(`${text} Added to your contacts.`, "gain");
 }
 function giveInvite(g) {
@@ -673,21 +867,89 @@ function giveInvite(g) {
   sceneLog(`"You should come to the ${ev.title} — ${ev.venue}, ${CITY[ev.city]}, on day ${ev.day}. ${ev.pitch}" Added to your agenda.`, "gain");
 }
 
+function startQuiz(g) {
+  const T = talkType(g);
+  g.questions = [...TALK_POOLS[T.id]].sort(() => rnd() - .5).slice(0, T.qs).map(q => ({ q: q.q, a: [...q.a].sort(() => rnd() - .5) }));
+  g.qi = 0; g.score = 0;
+}
+const maxScore = g => g.questions.reduce((s, q) => s + Math.max(...q.a.map(a => a[1])), 0);
 function answer(i) {
-  const g = S.gig, qs = TALK_QUESTIONS[g.level];
-  g.score = (g.score || 0) + qs[g.qi || 0].a[i][1];
-  g.qi = (g.qi || 0) + 1;
+  const g = S.gig;
+  g.score += g.questions[g.qi].a[i][1];
+  g.qi++;
   save(); render();
 }
-const maxScore = level => TALK_QUESTIONS[level].reduce((s, q) => s + Math.max(...q.a.map(a => a[1])), 0);
 function recordTalk() {
-  const g = S.gig, max = maxScore(g.level), ok = g.score >= max * TALK_PASS;
-  S.talks.push({ id: uid(), level: g.level, city: g.city, day: S.day, ok, score: g.score, max });
+  const g = S.gig, T = talkType(g), max = maxScore(g), ok = g.score >= max * T.pass;
+  S.talks.push({ id: uid(), level: g.level, type: T.id, city: g.city, day: S.day, ok, score: g.score, max });
+  if (ok) {
+    S.miles += T.reward;
+    S.cv.push({ id: uid(), text: `${T.name}, ${CITY[g.city]}`, cred: T.cv, day: S.day });
+    if (T.contact) S.contacts.push(roleContact(T.contact, g.city, `your ${T.name.toLowerCase()}`));
+  }
   if (!S.stamps.includes(g.city)) S.stamps.push(g.city);
   S.gig = null;
   advanceTo(S.day + 1);
   S.tab = "speaking";
   save(); render(); window.scrollTo(0, 0);
+  toast(ok ? `Passed. +${T.reward} business cards, +${T.cv} CV credibility.` : "Below the pass mark. It's in the track record now.");
+}
+
+// ---------------------------------------------------------------- contacts
+const msgOptions = () => Object.keys(MSG).sort(() => rnd() - .5).slice(0, 3);
+function initContact(c) {
+  const t = TASTES[c.kind] || TASTES.clueless;
+  c.likes ??= [...t.like].sort(() => rnd() - .5).slice(0, 2);
+  c.hates ??= [pick(t.hate)];
+  c.patience ??= PATIENCE; c.rapport ??= 0; c.thread ??= []; c.last ??= null; c.opps ??= 0; c.ignoring ??= false;
+  c.options ??= msgOptions(); c.sex ??= "n"; c.at ??= "the event";
+  return c;
+}
+function roleContact(tier, city, at) {
+  const r = rnd(), sex = r < .5 ? "m" : "f", role = pick(ROLES.interesting).map(t => pr(t, sex));
+  return initContact({ id: uid(), name: makeName(sex), sex, occ: role[1], note: role[2], offer: role[3], tier, kind: "interesting", met: city, at, day: S.day });
+}
+// Liked messages build rapport; hated ones, or writing again within the cooldown, cost patience.
+// At zero patience they ignore you for good. Enough rapport earns an opportunity.
+function sendMessage(id, type) {
+  const c = initContact(S.contacts.find(x => x.id === id)), R = REPLIES[c.kind] || REPLIES.clueless;
+  c.thread.push({ who: "you", text: MSG[type][1].replace("{event}", c.at) });
+  c.options = msgOptions();
+  if (c.ignoring) c.thread.push({ who: "sys", text: "No reply." });
+  else {
+    const bugged = c.last !== null && S.day - c.last < MSG_COOLDOWN;
+    c.last = S.day;
+    let reply;
+    if (bugged) { c.patience--; reply = pick(REPLIES.bugged); }
+    else if (c.hates.includes(type)) { c.patience--; c.rapport = Math.max(0, c.rapport - 1); reply = pick(R.hate); }
+    else if (c.likes.includes(type)) { c.rapport++; reply = pick(R.like); }
+    else reply = pick(R.meh);
+    c.thread.push({ who: "them", text: reply });
+    if (c.patience <= 0) { c.ignoring = true; c.thread.push({ who: "sys", text: `${c.name} has stopped replying.` }); }
+    else if (c.rapport >= RAPPORT_FOR_OPP && c.opps < MAX_OPPS[c.tier]) {
+      c.rapport = 0; c.opps++;
+      c.thread.push({ who: "them", text: R.gift.replace("{opp}", grantOpportunity(c)) });
+    }
+  }
+  c.thread = c.thread.slice(-14);
+  save(); render(); contactSheet(id);
+}
+function grantOpportunity(c) {
+  if (c.opps === 1) {
+    S.cv.push({ id: uid(), text: `${cap(c.offer.replace(/^(a|an|the) /, ""))} (via ${c.name})`, cred: CRED[c.tier], day: S.day });
+    toast(CRED[c.tier] ? `New CV entry, +${CRED[c.tier]} credibility` : "New CV entry. It is padding.");
+    return c.offer;
+  }
+  if (rnd() < .35) {
+    const t = makeTalk({ host: c.name, covered: true });
+    S.agenda.push(t);
+    toast(`Speaking engagement booked: ${t.title}`);
+    return `a slot at my next event. ${t.title}, ${CITY[t.city]}, day ${t.day}. I'll cover the flight`;
+  }
+  const [offer, line] = pick(EXTRA_OPPS[Math.min(4, c.tier)]);
+  S.cv.push({ id: uid(), text: line.replace("{name}", c.name), cred: CRED[c.tier], day: S.day });
+  toast(`New CV entry, +${CRED[c.tier]} credibility`);
+  return offer;
 }
 
 function endScene() {
@@ -750,12 +1012,14 @@ function talkCard(e) {
   return `
   <article class="pass talk">
     <div class="pass-main">
-      <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="stars" style="color:var(--blue)">Level ${e.level}</span></div>
+      <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="stars" style="color:var(--blue)">Level ${e.level}</span>
+        ${e.source === "contact" ? `<span class="tag">via ${esc(e.host)}</span>` : ""}</div>
       <div class="pass-title">${esc(e.title)}</div>
-      <div class="pass-meta">${esc(CITY[e.city])}</div>
+      <div class="pass-meta">${esc(e.venue || "")}${e.venue ? " · " : ""}${esc(CITY[e.city])}</div>
+      ${e.pitch ? `<div class="pass-pitch">${esc(e.pitch)}</div>` : ""}
       <div class="pass-actions">
         <button class="btn primary" data-act="attend" data-v="${e.id}" ${S.miles < cost ? "disabled" : ""}>Speak<span class="cost">${cost ? `−${cost} cards` : ""}</span></button>
-        <span class="small muted">${e.city === S.city ? "Local" : `Flight ${FLIGHT} cards`}</span></div>
+        <span class="small muted">${e.city === S.city ? "Local" : e.covered ? "Flight covered" : `Flight ${FLIGHT} cards`}</span></div>
     </div>
     <div class="pass-stub">
       <span class="label">To</span><span class="iata">${e.city}</span>
@@ -831,6 +1095,7 @@ function viewContacts() {
       <span class="nm">${esc(c.name)}</span>
       <span class="oc">${esc(c.occ)}</span>
       <span class="small muted">Met in ${esc(CITY[c.met])}</span>
+      ${c.ignoring ? '<span class="tag bad">Ignoring you</span>' : c.last != null ? `<span class="small muted">Last message: day ${c.last}</span>` : '<span class="small" style="color:var(--blue)">Not contacted yet</span>'}
     </button>`).join("")}</div>` : `<div class="empty">No contacts yet. Cards change hands once a conversation gets past small talk.</div>`}`;
 }
 
@@ -901,7 +1166,7 @@ function viewScene() {
   <section class="card convo stack">
     <div class="row" style="justify-content:space-between"><div><span class="label">Talking to</span><h3>${esc(cur.name)}</h3></div>
       <div class="stage-dots" aria-label="${stages[cur.stage]}">${[1, 2, 3, 4].map(i => `<span class="${cur.stage >= i ? "on" : ""}"></span>`).join("")}</div></div>
-    <p class="small muted">${esc(cur.look)}, ${esc(cur.beh)}.${cur.stage >= 2 ? ` They said: "${esc(cur.claim)}"` : ""}</p>
+    <p class="small muted">${esc(cur.look)}, ${esc(cur.beh)}.${cur.stage >= 2 ? pr(` {They} said: "${esc(cur.claim)}"`, cur.sex) : ""}</p>
     ${readMeter(cur)}
     <div class="row">
       <button class="btn primary" data-act="talk" ${left < stepCost(cur.stage) ? "disabled" : ""}>Keep talking<span class="cost">${stepCost(cur.stage)} min</span></button>
@@ -928,41 +1193,58 @@ function readMeter(g) {
 }
 
 function viewGig() {
-  const g = S.gig;
+  const g = S.gig, T = talkType(g);
+  if (!g.questions) startQuiz(g);
   return `
   <section class="stack">
-    <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="label">${g.city} · ${esc(CITY[g.city])}</span></div>
-    <h2>${esc(g.title)}</h2>
+    <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="label">Level ${g.level} · ${g.city} · ${esc(CITY[g.city])}</span></div>
+    <h2>${esc(T.name)}</h2>
+    <p class="muted">${esc(cap(T.venue))}. ${esc(T.blurb)}</p>
   </section>
-  ${quiz(g)}`;
+  ${quiz(g, T)}`;
 }
 
-function quiz(g) {
-  const qs = TALK_QUESTIONS[g.level], qi = g.qi || 0, max = maxScore(g.level);
+function quiz(g, T) {
+  const qs = g.questions, qi = g.qi, max = maxScore(g), mark = Math.ceil(max * T.pass);
   if (qi >= qs.length) {
-    const ok = g.score >= max * TALK_PASS;
+    const ok = g.score >= max * T.pass;
     return `<section class="card stack">
       <span class="label">Result</span>
       <div class="row" style="justify-content:space-between"><span class="clock">${g.score}/${max}</span><span class="tag ${ok ? "good" : "bad"}">${ok ? "Pass" : "Below the pass mark"}</span></div>
-      <p class="small muted">Pass mark ${Math.ceil(max * TALK_PASS)}.</p>
-      <button class="btn primary block" data-act="talk-done">Add to track record</button>
+      <p class="small muted">Pass mark ${mark}.${ok ? ` Reward: ${T.reward} business cards, +${T.cv} CV credibility${T.contact ? `, and someone ${TIERS[T.contact].tag} in the audience wants your card` : ""}.` : " It still goes in the track record."}</p>
+      <button class="btn primary block" data-act="talk-done">Leave the stage</button>
     </section>`;
   }
   const q = qs[qi];
   return `<section class="card stack">
-    <div class="row" style="justify-content:space-between"><span class="label">Question ${qi + 1} of ${qs.length}</span><span class="small muted">Score ${g.score || 0}</span></div>
+    <div class="row" style="justify-content:space-between"><span class="label">Question ${qi + 1} of ${qs.length}</span><span class="small muted">Score ${g.score} · pass ${mark}</span></div>
     <h3>${esc(q.q)}</h3>
     <div class="stack">${q.a.map((a, i) => `<button class="btn block" style="justify-content:flex-start;text-align:left" data-act="answer" data-v="${i}">${esc(a[0])}</button>`).join("")}</div>
   </section>`;
 }
 
 function viewSpeaking() {
-  const lvl = talkLevel(), booked = S.agenda.filter(e => e.kind === "talk").sort((a, b) => a.day - b.day);
+  const lvl = talkLevel(), booked = S.agenda.filter(e => e.kind === "talk").sort((a, b) => a.day - b.day), cr = credibility();
+  const next = lvl < TALK_LEVELS ? lvl + 1 : null;
+  const bar = (v, n) => `<div class="progress"><span style="width:${Math.min(100, v / n * 100)}%"></span></div>`;
   return `
   <div class="row" style="justify-content:space-between"><h2>Speaking</h2><span class="chip">Level ${lvl}</span></div>
-  <p class="small muted">Answer each question in front of the audience. Reach the pass mark (${Math.round(TALK_PASS * 100)}% of the top score) for a success; ${TALK_UNLOCK} successes at a level unlock the next.</p>
+  ${next ? `<section class="card stack">
+    <span class="label">To unlock Level ${next}</span>
+    <div class="row" style="justify-content:space-between"><span class="small">Passed talks at Level ${lvl}</span><b class="small">${Math.min(successes(lvl), TALK_UNLOCK)}/${TALK_UNLOCK}</b></div>${bar(successes(lvl), TALK_UNLOCK)}
+    <div class="row" style="justify-content:space-between"><span class="small">CV credibility</span><b class="small">${Math.min(cr, CV_NEEDED[next])}/${CV_NEEDED[next]}</b></div>${bar(cr, CV_NEEDED[next])}
+  </section>` : '<p class="muted">Every stage is open to you. Try not to fall off one.</p>'}
+  <h3>Formats</h3>
+  <div class="stack">${TALK_TYPES.map(T => `<div class="card stack" style="padding:12px;${T.level > lvl ? "opacity:.55" : ""}">
+    <div class="row" style="justify-content:space-between"><b>${esc(T.name)}</b><span class="tag">${T.level > lvl ? "Locked · " : ""}Level ${T.level}</span></div>
+    <span class="small muted">${esc(T.blurb)}</span>
+    <span class="small">${T.qs} questions · pass ${Math.round(T.pass * 100)}% · ${T.reward} cards · +${T.cv} CV${T.contact ? ` · ${TIERS[T.contact].tag} contact` : ""}</span>
+  </div>`).join("")}</div>
   <h3>Booked</h3>
-  ${booked.length ? `<div class="stack">${booked.map(passCard).join("")}</div>` : '<div class="empty">No speaking engagements booked. They are rare draws on the board.</div>'}
+  ${booked.length ? `<div class="stack">${booked.map(e => passCard(e)).join("")}</div>` : '<div class="empty">No speaking engagements booked. They are rare draws on the board, and well-disposed contacts sometimes offer one.</div>'}
+  <h3>CV</h3>
+  <div class="card stack">${S.cv.length ? [...S.cv].reverse().map(e => `<div class="row small" style="justify-content:space-between;flex-wrap:nowrap"><span style="min-width:0">${esc(e.text)}</span><span class="tag ${e.cred ? "good" : ""}">${e.cred ? `+${e.cred}` : "padding"}</span></div>`).join("") : '<p class="small muted">Empty. Passed talks and opportunities from contacts go here.</p>'}
+    <div class="row" style="justify-content:space-between"><span class="label">Credibility</span><b>${cr}</b></div></div>
   ${viewTrack()}`;
 }
 
@@ -971,10 +1253,10 @@ function viewTrack() {
   const levels = Array.from({ length: TALK_LEVELS }, (_, i) => i + 1).map(l => {
     const done = S.talks.filter(t => t.level === l), ok = done.filter(t => t.ok).length;
     return `<div class="row" style="justify-content:space-between"><span><b>Level ${l}</b> ${l > lvl ? '<span class="tag">Locked</span>' : ""}</span>
-      <span class="small muted">${ok} passed · ${done.length - ok} failed${l < TALK_LEVELS ? ` · ${Math.min(ok, TALK_UNLOCK)}/${TALK_UNLOCK} to unlock Level ${l + 1}` : ""}</span></div>`;
+      <span class="small muted">${ok} passed · ${done.length - ok} failed</span></div>`;
   }).join("");
-  const hist = [...S.talks].reverse().map(t => `<div class="row small"><span class="tag ${t.ok ? "good" : "bad"}">${t.ok ? "Pass" : "Fail"}</span>Level ${t.level}${t.max ? ` · ${t.score}/${t.max}` : ""} · ${esc(CITY[t.city])} · day ${t.day}</div>`).join("");
-  return `<h3>Track record</h3><div class="card stack">${levels}${hist ? `<div class="stack">${hist}</div>` : '<p class="small muted">No speaking engagements yet. They are rare draws on the board.</p>'}</div>`;
+  const hist = [...S.talks].reverse().map(t => `<div class="row small"><span class="tag ${t.ok ? "good" : "bad"}">${t.ok ? "Pass" : "Fail"}</span>${esc(talkType(t).name)}${t.max ? ` · ${t.score}/${t.max}` : ""} · ${esc(CITY[t.city])} · day ${t.day}</div>`).join("");
+  return `<h3>Track record</h3><div class="card stack">${levels}${hist ? `<div class="stack">${hist}</div>` : ""}</div>`;
 }
 
 function viewAfter() {
@@ -1021,23 +1303,32 @@ function guestSheet(id) {
   openSheet(`
     <div class="row" style="justify-content:space-between"><span class="label">Guest #${g.id}</span><button class="btn" data-act="close">Close</button></div>
     <h2>${g.stage ? esc(g.name) : "Someone you haven't met"}</h2>
-    <p>${esc(g.look[0].toUpperCase() + g.look.slice(1))}, with ${esc(g.acc)}. Right now they are ${esc(g.beh)}.</p>
-    ${g.stage >= 2 ? `<p class="muted">They told you: "${esc(g.claim)}"</p>` : ""}
+    <p>${esc(cap(g.look))}, with ${esc(g.acc)}.${g.hair ? " " + esc(pr(`{They} {have} ${g.hair} and ${g.expr}.`, g.sex)) : ""} ${esc(pr(`Right now {they} {is} ${g.beh}.`, g.sex))}</p>
+    ${g.heard ? `<p class="muted small">You catch a fragment: <i>${esc(g.heard)}</i></p>` : ""}
+    ${g.stage >= 2 ? `<p class="muted">${esc(pr("{They} told you:", g.sex))} "${esc(g.claim)}"</p>` : ""}
     ${g.stage ? readMeter(g) : ""}
     ${g.card ? '<p class="small"><span class="tag good">Card in your contacts</span></p>' : ""}
-    ${isCur ? '<p class="small muted">You are talking to them now.</p>' :
-      `<button class="btn primary block" data-act="approach" data-v="${g.id}" ${left < INTRO ? "disabled" : ""}>${g.stage ? "Go back to them" : "Introduce yourself"}<span class="cost">1 min</span></button>`}`);
+    ${isCur ? `<p class="small muted">${esc(pr("You are talking to {them} now.", g.sex))}</p>` :
+      `<button class="btn primary block" data-act="approach" data-v="${g.id}" ${left < INTRO ? "disabled" : ""}>${g.stage ? pr("Go back to {them}", g.sex) : "Introduce yourself"}<span class="cost">1 min</span></button>`}`);
 }
 
 function contactSheet(id) {
-  const c = S.contacts.find(x => x.id === id), T = TIERS[c.tier];
+  const c = initContact(S.contacts.find(x => x.id === id)), T = TIERS[c.tier];
+  const cooling = c.last !== null && S.day - c.last < MSG_COOLDOWN;
   openSheet(`
     <div class="row" style="justify-content:space-between"><span class="row"><span class="tier r${c.tier}" style="background:var(--rc)">${T.tag}</span><span class="stars r${c.tier}">${T.stars}</span></span><button class="btn" data-act="close">Close</button></div>
     <h2>${esc(c.name)}</h2>
     <p>${esc(c.occ)}</p>
     <p class="muted">"${esc(c.note)}"</p>
-    <p class="small">Met on day ${c.day} in ${esc(CITY[c.met])}.</p>
-    <p class="small" style="color:${c.tier > 1 ? "var(--good)" : "var(--bad)"}">${c.tier > 1 ? "Can offer " : "Realistically: "}${esc(c.offer)}.</p>`);
+    <p class="small">Met on day ${c.day} in ${esc(CITY[c.met])}, at ${esc(c.at)}.</p>
+    <div class="row small"><span class="label">Patience</span><span class="dots">${Array.from({ length: PATIENCE }, (_, i) => `<span class="${i < c.patience ? "on" : ""}"></span>`).join("")}</span>
+      <span class="muted">${c.opps}/${MAX_OPPS[c.tier]} opportunities</span></div>
+    <div class="thread">${c.thread.length ? c.thread.map(m => `<div class="bubble ${m.who}">${esc(m.text)}</div>`).join("") : `<div class="bubble sys">No messages yet.</div>`}</div>
+    ${c.ignoring ? `<p class="small" style="color:var(--bad)">${esc(pr(`${c.name} no longer answers. {They} {is} not coming back.`, c.sex))}</p>` : `
+    <span class="label">Send a message</span>
+    ${cooling ? `<p class="small" style="color:var(--bad)">You last wrote on day ${c.last}. Writing again so soon may come across as pestering.</p>` : ""}
+    <div class="stack">${c.options.map(k => `<button class="btn block" style="justify-content:flex-start;text-align:left;flex-direction:column;align-items:flex-start" data-act="msg" data-c="${c.id}" data-v="${k}">
+      <span>${esc(MSG[k][0])}</span><span class="small muted" style="font-weight:400">${esc(MSG[k][1].replace("{event}", c.at))}</span></button>`).join("")}</div>`}`);
 }
 
 // ---------------------------------------------------------------- events
@@ -1064,6 +1355,7 @@ document.addEventListener("click", e => {
     case "flip-all": S.after.open = S.after.gained.map(c => c.id); save(); render(); break;
     case "after-done": S.after = null; S.tab = "agenda"; save(); render(); window.scrollTo(0, 0); break;
     case "contact": contactSheet(v); break;
+    case "msg": sendMessage(b.dataset.c, v); break;
     case "close": closeSheet(); break;
     case "reset-ask": openSheet(`<h2>Start a new life?</h2><p class="muted">This wipes your contacts, agenda, stamps and business cards on this device.</p>
       <div class="row"><button class="btn red" data-act="reset">Start over</button><button class="btn" data-act="close">Keep playing</button></div>`); break;

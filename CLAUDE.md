@@ -9,6 +9,6 @@ Core gameplay loop: networking events.
 - Themes: networking, papers, articles, junkets; inspired by
   the creator's time at the Danube Institute
 - Tone: dry satire with absurd elements (lighter tone under consideration)
-Rule: the creator does all creative work. Do not invent
-content, characters, mechanics or text. Build only what is
-specified; ask when something is undefined.
+Rule (amended): Claude may do creative work: content,
+characters, mechanics and text. The creator has the final say
+and can rewrite or override anything.

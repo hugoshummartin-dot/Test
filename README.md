@@ -21,12 +21,28 @@ Open the file in a phone browser to play. Progress is saved in that browser only
   - Their favourite drink plus an outfit they like gets you the invitation as well.
   - *Placeholders:* 50% of guests are picky, 40% need you to hold a glass, and a picky
     guest likes 7 of the 14 outfits.
-- **Speaking** has its own tab, showing your booked talks, your current level and your
-  track record. Talks are drawn on the board at your highest unlocked level. Each talk is
-  a set of multiple-choice questions, and every answer is worth points. Reaching the pass
-  mark counts as a success, and enough successes at one level unlock the next.
-  *Placeholders until specified:* a 2% draw rate, 3 levels, 3 successes to unlock, a 60%
-  pass mark, and the questions themselves (`TALK_QUESTIONS`).
+- **Guests** each have a gender that matches their first name, surname form (Ivanov or
+  Ivanova) and pronouns. A closer look adds their hair, demeanour and a fragment of
+  overheard conversation, which hints at their type.
+- **Speaking** has its own tab. It covers the formats, the requirements for the next
+  level, your booked talks, your CV and your track record.
+  - There are six formats over four levels, each with its own length, pass mark, rewards
+    and question pool:
+    - Lightning talk and Podcast guest spot (level 1)
+    - Panel discussion and Conference paper (level 2)
+    - Policy roundtable (level 3)
+    - Keynote (level 4)
+  - Passing a talk pays business cards and adds a CV entry. A roundtable or keynote also
+    gives you an SR or SSR contact.
+  - A level unlocks after 3 passes at the level below *and* enough CV credibility
+    (3, 8 and 15 for levels 2 to 4).
+- **Messaging contacts:** you pick one of three messages. Each contact has hidden likes
+  and dislikes.
+  - Liked messages build rapport, and enough rapport earns an opportunity: a CV entry, or
+    sometimes a speaking slot.
+  - A disliked message, or writing again within 2 days, costs patience. At zero patience
+    the contact ignores you for good.
+  - Opportunities from N contacts go on the CV as padding worth no credibility.
 - **The morning after:** your contact cards flip to reveal their rarity, and invitations
   join your agenda. The passport shows stamps, your level and your track record.
 
