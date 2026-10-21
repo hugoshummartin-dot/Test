@@ -13,11 +13,20 @@ Open the file in a phone browser to play. Progress is saved in that browser only
 - **Conversations:** introducing yourself costs 1 min, and each further step doubles
   (2, 4, 8 min). "Your read" is a gauge that updates after each step. It is noisy at
   first and gets more accurate the longer you talk.
-- **Speaking engagements** are drawn at your highest unlocked level. You record their
-  outcome in a track record, and enough successes at one level unlock the next.
-  *Placeholders until specified:* a 2% draw rate, 3 levels, and 3 successes to unlock the
-  next level. The performance minigame is not defined yet, so for now you record each
-  outcome by hand.
+- **Outfit and drink:** before each party you pick an outfit and what you're holding
+  (nothing, water, juice or wine). You can swap drinks at any time for free, but your
+  outfit is fixed for the night. Some guests won't talk to you empty-handed.
+  - Picky guests have a hidden drink ranking and a set of outfits they like.
+  - An acceptable drink gets you their card.
+  - Their favourite drink plus an outfit they like gets you the invitation as well.
+  - *Placeholders:* 50% of guests are picky, 40% need you to hold a glass, and a picky
+    guest likes 7 of the 14 outfits.
+- **Speaking** has its own tab, showing your booked talks, your current level and your
+  track record. Talks are drawn on the board at your highest unlocked level. Each talk is
+  a set of multiple-choice questions, and every answer is worth points. Reaching the pass
+  mark counts as a success, and enough successes at one level unlock the next.
+  *Placeholders until specified:* a 2% draw rate, 3 levels, 3 successes to unlock, a 60%
+  pass mark, and the questions themselves (`TALK_QUESTIONS`).
 - **The morning after:** your contact cards flip to reveal their rarity, and invitations
   join your agenda. The passport shows stamps, your level and your track record.
 

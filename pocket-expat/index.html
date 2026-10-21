@@ -105,7 +105,7 @@ p { margin: 0; }
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
 }
-.tabs-inner { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+.tabs-inner { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); }
 .tab {
   border: 0; background: none; padding: 10px 4px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px;
   font-size: 12px; font-weight: 600; color: var(--muted); position: relative;
@@ -295,6 +295,15 @@ const SR_PITY = 10, SSR_PITY = 60;
 // PLACEHOLDERS pending the creator's spec: chance a draw is a speaking engagement, number of
 // speaking levels, successes needed at a level to unlock the next. Performance is a minigame (to be defined).
 const TALK_RATE = .02, TALK_LEVELS = 3, TALK_UNLOCK = 3;
+// PLACEHOLDERS: share of picky guests, share who won't talk to you empty-handed, how many outfits a picky guest likes.
+const PICKY_SHARE = .5, NEEDS_GLASS = .4, OUTFITS_LIKED = 7;
+const DRINKS = ["water", "juice", "wine"];
+// PLACEHOLDERS: the creator writes the speaking questions and answers. Each answer is [text, points].
+// A talk passes when it scores at least TALK_PASS of the maximum; a pass counts as a success.
+const TALK_PASS = .6;
+const TALK_QUESTIONS = Object.fromEntries([1, 2, 3].map(l => [l, [1, 2, 3].map(n => ({
+  q: `[Placeholder] Level ${l} · Question ${n}`, a: [["Answer A", 2], ["Answer B", 1], ["Answer C", 0]],
+}))]));
 
 // Event titles per tier. Common ones sound grand; the venue gives them away.
 const EVENTS = {
@@ -446,6 +455,7 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e
 S = load() || fresh();
 S.talks = S.talks || [];
 if (S.scene && !S.scene.dur) S.scene.dur = 60;
+if (S.scene && S.scene.ready === undefined) S.scene.ready = true;
 
 function reach() { return S.contacts.reduce((s, c) => s + REACH[c.tier], 0); }
 function level() {
@@ -543,6 +553,9 @@ function makeGuests(ev) {
       look: `${art(age)} ${fig} in ${outfit}`, beh, acc,
       claim: role[0], real: role[1], substance: role[2], offer: role[3], small: pick(SMALL_TALK[kind]),
       leaves: Math.round(kind === "interesting" ? ri(20, 100) * k : ri(25, 140) * k), read: null,
+      needsGlass: rnd() < NEEDS_GLASS, picky: rnd() < PICKY_SHARE,
+      drinks: [...DRINKS].sort(() => rnd() - .5),
+      outfits: OUTFITS.map(o => o[0]).sort(() => rnd() - .5).slice(0, OUTFITS_LIKED),
     };
   });
 }
@@ -558,7 +571,7 @@ function attend(id) {
   const fromCity = S.city;
   S.city = ev.city;
   if (ev.kind === "talk") { S.gig = ev; S.tab = "gig"; save(); render(); window.scrollTo(0, 0); return; }
-  S.scene = { ev, min: 0, dur: TIERS[ev.tier].len, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [] };
+  S.scene = { ev, min: 0, dur: TIERS[ev.tier].len, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [], ready: false, outfit: S.outfit || OUTFITS[0][0], drink: null };
   const flew = cost ? ` Flight −${cost} business cards.` : ev.city !== fromCity ? " Your host covered the flight." : "";
   sceneLog(`You arrive at ${ev.venue}, ${CITY[ev.city]}. ${TIERS[ev.tier].size} people. You have ${TIERS[ev.tier].len} minutes.${flew}`, "sys");
   S.tab = "scene";
@@ -587,6 +600,10 @@ function tick(cost) {
 function approach(id) {
   const sc = S.scene, g = guest(id);
   if (!g || g.leaves <= sc.min || sc.min + INTRO > sc.dur) return;
+  if (g.needsGlass && !sc.drink) {
+    sceneLog(`#${g.id} won't talk to you without a glass in your hand.`, "sys");
+    sc.cur = null; tick(INTRO); closeSheet(); save(); render(); return;
+  }
   sc.cur = id;
   if (g.stage === 0) { g.stage = 1; updateRead(g); sceneLog(`"Hi, I'm ${g.name}." ${g.small}`); }
   else sceneLog(`You catch ${g.name} again. They remember you.`);
@@ -597,24 +614,40 @@ function talk() {
   const sc = S.scene, g = guest(sc.cur);
   const cost = g ? stepCost(g.stage) : 0;
   if (!g || sc.min + cost > sc.dur) return;
+  if (g.needsGlass && !sc.drink) { sceneLog(`${g.name} won't keep talking without a glass in your hand.`, "sys"); save(); render(); return; }
   if (g.stage >= 4) sceneLog(`The conversation with ${g.name} is running dry. You talk about the weather.`);
   else {
     g.stage++;
     updateRead(g);
     if (g.stage === 2) {
       sceneLog(`You ask what they do. "${g.claim}"`);
-      if (g.kind === "useless") giveCard(g, g.claim, "They press a business card into your hand before you can ask more.");
     } else if (g.stage === 3) {
       sceneLog(`"${g.substance}"`);
-      if (g.kind === "interesting") giveCard(g, g.real, `They hand you a plain card: ${g.real}.`);
-      else if (g.kind === "clueless") giveCard(g, g.claim, "You swap numbers, mostly out of politeness.");
-      else giveInvite(g);
-    } else if (g.stage === 4) {
-      if (g.kind === "useless") sceneLog(`${g.name} repeats the pitch, louder. Nothing new.`);
-      else giveInvite(g);
+    } else if (g.stage === 4 && g.kind === "useless") {
+      sceneLog(`${g.name} repeats the pitch, louder. Nothing new.`);
     }
   }
+  offer(g);
   tick(cost); save(); render();
+}
+
+// Cards come at stage 2 (useless) or 3 (others), invitations one stage later. Picky guests only
+// give a card if they like what they see and only invite if they really like it; swapping your
+// drink and talking on gives them another chance.
+const likes = g => !g.picky || (S.scene.drink && g.drinks.indexOf(S.scene.drink) <= 1);
+const reallyLikes = g => !g.picky || (S.scene.drink === g.drinks[0] && g.outfits.includes(S.scene.outfit));
+function offer(g) {
+  const cardAt = g.kind === "useless" ? 2 : 3;
+  if (g.stage >= cardAt && !g.card) {
+    if (!likes(g)) sceneLog(`${g.name} doesn't offer you their card.`, "sys");
+    else if (g.kind === "interesting") giveCard(g, g.real, `They hand you a plain card: ${g.real}.`);
+    else if (g.kind === "clueless") giveCard(g, g.claim, "You swap numbers, mostly out of politeness.");
+    else giveCard(g, g.claim, "They press a business card into your hand.");
+  }
+  if (g.stage >= cardAt + 1 && g.card && !g.invite) {
+    if (!reallyLikes(g)) sceneLog(`No invitation from ${g.name}.`, "sys");
+    else giveInvite(g);
+  }
 }
 
 function giveCard(g, occ, text) {
@@ -640,13 +673,20 @@ function giveInvite(g) {
   sceneLog(`"You should come to the ${ev.title} — ${ev.venue}, ${CITY[ev.city]}, on day ${ev.day}. ${ev.pitch}" Added to your agenda.`, "gain");
 }
 
-function recordTalk(ok) {
-  const g = S.gig;
-  S.talks.push({ id: uid(), level: g.level, city: g.city, day: S.day, ok });
+function answer(i) {
+  const g = S.gig, qs = TALK_QUESTIONS[g.level];
+  g.score = (g.score || 0) + qs[g.qi || 0].a[i][1];
+  g.qi = (g.qi || 0) + 1;
+  save(); render();
+}
+const maxScore = level => TALK_QUESTIONS[level].reduce((s, q) => s + Math.max(...q.a.map(a => a[1])), 0);
+function recordTalk() {
+  const g = S.gig, max = maxScore(g.level), ok = g.score >= max * TALK_PASS;
+  S.talks.push({ id: uid(), level: g.level, city: g.city, day: S.day, ok, score: g.score, max });
   if (!S.stamps.includes(g.city)) S.stamps.push(g.city);
   S.gig = null;
   advanceTo(S.day + 1);
-  S.tab = "passport";
+  S.tab = "speaking";
   save(); render(); window.scrollTo(0, 0);
 }
 
@@ -677,6 +717,7 @@ function openSheet(html) { $("#sheet").innerHTML = html; $("#scrim").hidden = fa
 function closeSheet() { $("#scrim").hidden = true; }
 
 const ICONS = {
+  speaking: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>',
   board: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9h4M7 13h6M15 9h2M15 13h2M8 21h8"/></svg>',
   agenda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   contacts: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="3.5"/><path d="M3 20c.8-3.3 3.2-5 6-5s5.2 1.7 6 5M16 5.5a3 3 0 0 1 0 6M18 15c1.6.7 2.6 2.4 3 5"/></svg>',
@@ -695,7 +736,7 @@ function renderTabs() {
   const inScene = S.tab === "scene" || S.tab === "after" || S.tab === "gig";
   $("#tabs").hidden = inScene;
   if (inScene) return;
-  const tabs = [["board", "Board"], ["agenda", "Agenda"], ["contacts", "Contacts"], ["passport", "Passport"]];
+  const tabs = [["board", "Board"], ["agenda", "Agenda"], ["speaking", "Speaking"], ["contacts", "Contacts"], ["passport", "Passport"]];
   $("#tabs-inner").innerHTML = tabs.map(([k, l]) => `
     <button class="tab" data-act="tab" data-v="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>
       ${ICONS[k]}${l}${k === "agenda" && S.agenda.length ? `<span class="badge">${S.agenda.length}</span>` : ""}
@@ -808,13 +849,35 @@ function viewPassport() {
     <div class="stat"><div class="label">Draws</div><div class="v">${S.pulls}</div></div>
     <div class="stat"><div class="label">Cities</div><div class="v">${S.stamps.length}/${CITIES.length}</div></div>
   </div>
-  ${viewTrack()}
   <h2>Stamps</h2>
   <div class="stamps">${CITIES.map(([c, n], i) => `<div class="stamp ${S.stamps.includes(c) ? "got" : ""}" style="--rot:${(i * 37) % 17 - 8}deg"><span><b>${c}</b>${esc(n)}</span></div>`).join("")}</div>
   <button class="btn" data-act="reset-ask" style="align-self:flex-start">Start a new life</button>`;
 }
 
+function viewPrep() {
+  const sc = S.scene, ev = sc.ev;
+  return `
+  <section class="scene-head">
+    <div class="row"><span class="tier r${ev.tier}" style="background:var(--rc)">${TIERS[ev.tier].tag}</span><span class="label">${ev.city} · ${esc(CITY[ev.city])}</span></div>
+    <h2>${esc(ev.title)}</h2>
+    <p class="muted">${esc(ev.venue)} · ${TIERS[ev.tier].len} min · ${TIERS[ev.tier].size} guests</p>
+  </section>
+  <section class="card stack">
+    <label class="label" for="outfit">What you're wearing</label>
+    <select class="search" id="outfit">${OUTFITS.map(o => `<option ${o[0] === sc.outfit ? "selected" : ""}>${esc(o[0])}</option>`).join("")}</select>
+    <span class="label">What you're holding</span>
+    ${drinkPicker(sc)}
+    <button class="btn primary block" data-act="walk-in">Walk in</button>
+  </section>`;
+}
+
+function drinkPicker(sc) {
+  return `<div class="filters" role="group" aria-label="What you're holding">${[[null, "Nothing"], ...DRINKS.map(d => [d, d[0].toUpperCase() + d.slice(1)])].map(([d, l]) =>
+    `<button data-act="drink" data-v="${d || ""}" aria-pressed="${sc.drink === d}">${l}</button>`).join("")}</div>`;
+}
+
 function viewScene() {
+  if (!S.scene.ready) return viewPrep();
   const sc = S.scene, ev = sc.ev, left = sc.dur - sc.min, cur = sc.cur ? guest(sc.cur) : null;
   let people = present();
   if (sc.filter === "met") people = people.filter(g => g.stage > 0);
@@ -831,6 +894,8 @@ function viewScene() {
       <button class="btn ${over ? "red" : ""}" data-act="end">${over ? "See how it went" : "Leave the party"}</button>
     </div>
     <div class="progress"><span style="width:${sc.min / sc.dur * 100}%"></span></div>
+    <div class="row small muted">Wearing ${esc(sc.outfit)}.</div>
+    ${drinkPicker(sc)}
   </section>
   ${cur ? `
   <section class="card convo stack">
@@ -869,14 +934,36 @@ function viewGig() {
     <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="label">${g.city} · ${esc(CITY[g.city])}</span></div>
     <h2>${esc(g.title)}</h2>
   </section>
-  <section class="card stack">
-    <span class="label">Performance minigame</span>
-    <p class="muted">Not defined yet. Record the outcome to test the track record and level unlocks.</p>
-    <div class="row">
-      <button class="btn primary" data-act="talk-ok">Record success</button>
-      <button class="btn" data-act="talk-fail">Record failure</button>
-    </div>
+  ${quiz(g)}`;
+}
+
+function quiz(g) {
+  const qs = TALK_QUESTIONS[g.level], qi = g.qi || 0, max = maxScore(g.level);
+  if (qi >= qs.length) {
+    const ok = g.score >= max * TALK_PASS;
+    return `<section class="card stack">
+      <span class="label">Result</span>
+      <div class="row" style="justify-content:space-between"><span class="clock">${g.score}/${max}</span><span class="tag ${ok ? "good" : "bad"}">${ok ? "Pass" : "Below the pass mark"}</span></div>
+      <p class="small muted">Pass mark ${Math.ceil(max * TALK_PASS)}.</p>
+      <button class="btn primary block" data-act="talk-done">Add to track record</button>
+    </section>`;
+  }
+  const q = qs[qi];
+  return `<section class="card stack">
+    <div class="row" style="justify-content:space-between"><span class="label">Question ${qi + 1} of ${qs.length}</span><span class="small muted">Score ${g.score || 0}</span></div>
+    <h3>${esc(q.q)}</h3>
+    <div class="stack">${q.a.map((a, i) => `<button class="btn block" style="justify-content:flex-start;text-align:left" data-act="answer" data-v="${i}">${esc(a[0])}</button>`).join("")}</div>
   </section>`;
+}
+
+function viewSpeaking() {
+  const lvl = talkLevel(), booked = S.agenda.filter(e => e.kind === "talk").sort((a, b) => a.day - b.day);
+  return `
+  <div class="row" style="justify-content:space-between"><h2>Speaking</h2><span class="chip">Level ${lvl}</span></div>
+  <p class="small muted">Answer each question in front of the audience. Reach the pass mark (${Math.round(TALK_PASS * 100)}% of the top score) for a success; ${TALK_UNLOCK} successes at a level unlock the next.</p>
+  <h3>Booked</h3>
+  ${booked.length ? `<div class="stack">${booked.map(passCard).join("")}</div>` : '<div class="empty">No speaking engagements booked. They are rare draws on the board.</div>'}
+  ${viewTrack()}`;
 }
 
 function viewTrack() {
@@ -884,10 +971,10 @@ function viewTrack() {
   const levels = Array.from({ length: TALK_LEVELS }, (_, i) => i + 1).map(l => {
     const done = S.talks.filter(t => t.level === l), ok = done.filter(t => t.ok).length;
     return `<div class="row" style="justify-content:space-between"><span><b>Level ${l}</b> ${l > lvl ? '<span class="tag">Locked</span>' : ""}</span>
-      <span class="small muted">${ok} succeeded · ${done.length - ok} failed${l < TALK_LEVELS ? ` · ${Math.min(ok, TALK_UNLOCK)}/${TALK_UNLOCK} to unlock Level ${l + 1}` : ""}</span></div>`;
+      <span class="small muted">${ok} passed · ${done.length - ok} failed${l < TALK_LEVELS ? ` · ${Math.min(ok, TALK_UNLOCK)}/${TALK_UNLOCK} to unlock Level ${l + 1}` : ""}</span></div>`;
   }).join("");
-  const hist = [...S.talks].reverse().map(t => `<div class="row small"><span class="tag ${t.ok ? "good" : "bad"}">${t.ok ? "Success" : "Failure"}</span>Level ${t.level} · ${esc(CITY[t.city])} · day ${t.day}</div>`).join("");
-  return `<h2>Track record</h2><div class="card stack">${levels}${hist ? `<div class="stack">${hist}</div>` : '<p class="small muted">No speaking engagements yet. They are rare draws on the board.</p>'}</div>`;
+  const hist = [...S.talks].reverse().map(t => `<div class="row small"><span class="tag ${t.ok ? "good" : "bad"}">${t.ok ? "Pass" : "Fail"}</span>Level ${t.level}${t.max ? ` · ${t.score}/${t.max}` : ""} · ${esc(CITY[t.city])} · day ${t.day}</div>`).join("");
+  return `<h3>Track record</h3><div class="card stack">${levels}${hist ? `<div class="stack">${hist}</div>` : '<p class="small muted">No speaking engagements yet. They are rare draws on the board.</p>'}</div>`;
 }
 
 function viewAfter() {
@@ -924,7 +1011,7 @@ function render() {
   if (S.gig) S.tab = "gig";
   if (!S.gig && S.tab === "gig") S.tab = "agenda";
   renderTop(); renderTabs();
-  const v = { board: viewBoard, agenda: viewAgenda, contacts: viewContacts, passport: viewPassport, scene: viewScene, after: viewAfter, gig: viewGig }[S.tab] || viewBoard;
+  const v = { board: viewBoard, agenda: viewAgenda, contacts: viewContacts, passport: viewPassport, scene: viewScene, after: viewAfter, gig: viewGig, speaking: viewSpeaking }[S.tab] || viewBoard;
   $("#view").innerHTML = v();
 }
 
@@ -969,8 +1056,10 @@ document.addEventListener("click", e => {
     case "walk": { const g = guest(S.scene.cur); sceneLog(`You excuse yourself from ${g.name}.`, "sys"); S.scene.cur = null; save(); render(); break; }
     case "filter": S.scene.filter = v; save(); render(); break;
     case "end": endScene(); break;
-    case "talk-ok": recordTalk(true); break;
-    case "talk-fail": recordTalk(false); break;
+    case "answer": answer(+v); break;
+    case "talk-done": recordTalk(); break;
+    case "drink": S.scene.drink = v || null; save(); render(); break;
+    case "walk-in": S.scene.ready = true; S.outfit = S.scene.outfit; save(); render(); window.scrollTo(0, 0); break;
     case "flip": if (!S.after.open.includes(v)) { S.after.open.push(v); save(); render(); } break;
     case "flip-all": S.after.open = S.after.gained.map(c => c.id); save(); render(); break;
     case "after-done": S.after = null; S.tab = "agenda"; save(); render(); window.scrollTo(0, 0); break;
@@ -980,6 +1069,9 @@ document.addEventListener("click", e => {
       <div class="row"><button class="btn red" data-act="reset">Start over</button><button class="btn" data-act="close">Keep playing</button></div>`); break;
     case "reset": S = fresh(); save(); closeSheet(); render(); toast("New arrival in Lisbon. Good luck."); break;
   }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "outfit" && S.scene) { S.scene.outfit = e.target.value; save(); }
 });
 document.addEventListener("input", e => {
   if (e.target.id !== "q" || !S.scene) return;
