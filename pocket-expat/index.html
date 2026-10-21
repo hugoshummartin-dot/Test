@@ -1,4 +1,4 @@
-<title>Pocket Expat</title>
+<title>Reticular</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -136,7 +136,7 @@ p { margin: 0; }
 .flap-row .dest { color: #e9edf2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .flap-row .rate { color: var(--board-dim); font-variant-numeric: tabular-nums; }
 .board .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.board .btn { background: #1d2632; border-color: #2c3746; color: #f4f6f9; }
+.board .btn { white-space: nowrap; gap: 8px; padding-inline: 10px; background: #1d2632; border-color: #2c3746; color: #f4f6f9; }
 .board .btn.gold { background: var(--board-ink); color: #10161e; border-color: var(--board-ink); }
 .pity { color: var(--board-dim); font-size: 11px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .pity b { color: var(--board-ink); }
@@ -207,6 +207,10 @@ p { margin: 0; }
 .guest .num { font-family: var(--f-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.2em; }
 .guest .desc { font-size: 14px; min-width: 0; }
 .guest .desc b { display: block; }
+.read { display: flex; flex-direction: column; gap: 4px; }
+.read-bar > span { background: var(--blue); }
+.mini-read { display: block; width: 44px; height: 4px; margin-top: 4px; margin-left: auto; background: var(--line); border-radius: 2px; overflow: hidden; }
+.mini-read > span { display: block; height: 100%; background: var(--blue); }
 .guest.current { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
 .guest.met .num { color: var(--blue); }
 .filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
@@ -278,16 +282,19 @@ const CITIES = [
 const CITY = Object.fromEntries(CITIES.map(([c, n]) => [c, n]));
 
 const TIERS = {
-  1: { tag: "N",   name: "Common",    stars: "★",    rate: .55, share: .05, size: 30, base: 20 },
-  2: { tag: "R",   name: "Rare",      stars: "★★",   rate: .30, share: .15, size: 50, base: 40 },
-  3: { tag: "SR",  name: "Super rare", stars: "★★★",  rate: .12, share: .20, size: 80, base: 70 },
-  4: { tag: "SSR", name: "Legendary", stars: "★★★★", rate: .03, share: .30, size: 100, base: 120 },
+  1: { tag: "N",   name: "Common",    stars: "★",    rate: .55, share: .05, size: 30, base: 20, len: 30 },
+  2: { tag: "R",   name: "Rare",      stars: "★★",   rate: .30, share: .15, size: 50, base: 40, len: 45 },
+  3: { tag: "SR",  name: "Super rare", stars: "★★★",  rate: .12, share: .20, size: 80, base: 70, len: 90 },
+  4: { tag: "SSR", name: "Legendary", stars: "★★★★", rate: .03, share: .30, size: 100, base: 120, len: 120 },
 };
 const CONTACT_MILES = { 1: 5, 2: 60, 3: 150, 4: 400 };
 const REACH = { 1: 0, 2: 1, 3: 3, 4: 8 };
 const LEVELS = [[0,"Tourist"],[2,"Exchange student"],[6,"Intern abroad"],[14,"Young professional"],[30,"Global insider"],[60,"Pocket Expat legend"]];
 const PULL = 100, PULL10 = 900, STIPEND = 50, FLIGHT = 100, START_MILES = 1200;
 const SR_PITY = 10, SSR_PITY = 60;
+// PLACEHOLDERS pending the creator's spec: chance a draw is a speaking engagement, number of
+// speaking levels, successes needed at a level to unlock the next. Performance is a minigame (to be defined).
+const TALK_RATE = .02, TALK_LEVELS = 3, TALK_UNLOCK = 3;
 
 // Event titles per tier. Common ones sound grand; the venue gives them away.
 const EVENTS = {
@@ -418,12 +425,12 @@ const fmt = n => n.toLocaleString("en-US");
 const initials = n => n.split(" ").map(w => w[0]).join("").slice(0, 2);
 
 // ---------------------------------------------------------------- state
-const KEY = "pocket-expat-v1";
+const KEY = "pocket-expat-v1"; // kept so existing saves carry over
 let S;
 function fresh() {
   const s = {
     day: 1, city: "LIS", miles: START_MILES, tab: "board", pity: 0, pitySSR: 0,
-    agenda: [], contacts: [], stamps: [], pulls: 0, attended: 0, scene: null, after: null, lastPull: [],
+    agenda: [], contacts: [], stamps: [], talks: [], gig: null, pulls: 0, attended: 0, scene: null, after: null, lastPull: [],
   };
   s.agenda.push({
     id: uid(), tier: 1, title: "Welcome Drinks for New Arrivals", venue: "the student residence bar", city: "LIS",
@@ -437,6 +444,8 @@ function load() {
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
 S = load() || fresh();
+S.talks = S.talks || [];
+if (S.scene && !S.scene.dur) S.scene.dur = 60;
 
 function reach() { return S.contacts.reduce((s, c) => s + REACH[c.tier], 0); }
 function level() {
@@ -458,8 +467,18 @@ function makeEvent(tier, o = {}) {
     host: o.host || "Open call", pitch: o.pitch || "", covered: !!o.covered, revealed: o.revealed !== false, source: o.source || "board",
   };
 }
+function talkLevel() {
+  let lvl = 1;
+  while (lvl < TALK_LEVELS && S.talks.filter(t => t.level === lvl && t.ok).length >= TALK_UNLOCK) lvl++;
+  return lvl;
+}
+function makeTalk() {
+  return { id: uid(), kind: "talk", level: talkLevel(), tier: 4, title: `Speaking engagement · Level ${talkLevel()}`, venue: "",
+    city: pick(CITIES)[0], day: S.day + ri(3, 10), host: "Open call", pitch: "", covered: false, revealed: true, source: "board" };
+}
 function pullOne() {
   S.pity++; S.pitySSR++; S.pulls++;
+  if (rnd() < TALK_RATE) return makeTalk();
   let t = rollTier();
   if (S.pitySSR >= SSR_PITY) t = 4;
   else if (S.pity >= SR_PITY && t < 3) t = 3;
@@ -469,7 +488,7 @@ function pullOne() {
 }
 function pull(n) {
   const cost = n === 10 ? PULL10 : PULL * n;
-  if (S.miles < cost) return toast(`You need ${fmt(cost)} miles. Wait a day or attend events to earn more.`);
+  if (S.miles < cost) return toast(`You need ${fmt(cost)} business cards. Wait a day or attend events to earn more.`);
   S.miles -= cost;
   const got = [];
   for (let i = 0; i < n; i++) got.push(pullOne());
@@ -478,7 +497,8 @@ function pull(n) {
   save(); render();
   const flaps = document.querySelector(".flaps");
   if (flaps) flaps.classList.add("flipping");
-  const best = Math.max(...got.map(e => e.tier));
+  const best = Math.max(...got.map(e => e.tier)), gig = got.find(e => e.kind === "talk");
+  if (gig) return toast(gig.title);
   toast(best >= 3 ? `${TIERS[best].tag}! ${got.find(e => e.tier === best).title}` : `${n} event${n > 1 ? "s" : ""} added to your agenda`);
 }
 
@@ -489,14 +509,20 @@ function advanceTo(day) {
   if (days > 0) { S.miles += STIPEND * days; S.day = day; }
   expire();
 }
-function waitDay() { advanceTo(S.day + 1); save(); render(); toast(`Day ${S.day}. Stipend +${STIPEND} miles.`); }
+function waitDay() { advanceTo(S.day + 1); save(); render(); toast(`Day ${S.day}. Stipend +${STIPEND} business cards.`); }
 function travelCost(e) { return e.city === S.city || e.covered ? 0 : FLIGHT; }
 
 // ---------------------------------------------------------------- cocktail
-const APPROACH = 5, TALK = 10, DUR = 60, START_H = 19;
+const INTRO = 1, START_H = 19;
+const stepCost = stage => 2 ** Math.min(stage, 3);   // next step from `stage`: 2, 4, 8 min (and 8 once it runs dry)
+const READ_BASE = { interesting: 72, useless: 45, clueless: 28 }, READ_NOISE = { 1: 30, 2: 22, 3: 14, 4: 8 };
+function updateRead(g) {
+  const n = READ_NOISE[Math.min(g.stage, 4)];
+  g.read = Math.max(3, Math.min(97, Math.round(READ_BASE[g.kind] + (rnd() * 2 - 1) * n)));
+}
 
 function makeGuests(ev) {
-  const T = TIERS[ev.tier], n = T.size, nInt = Math.max(1, Math.round(n * T.share));
+  const T = TIERS[ev.tier], k = T.len / 60, n = T.size, nInt = Math.max(1, Math.round(n * T.share));
   const kinds = [];
   for (let i = 0; i < n; i++) kinds.push(i < nInt ? "interesting" : (rnd() < .5 ? "useless" : "clueless"));
   kinds.sort(() => rnd() - .5);
@@ -516,7 +542,7 @@ function makeGuests(ev) {
       id: i + 1, name, kind, tier, stage: 0, card: false, invite: false,
       look: `${art(age)} ${fig} in ${outfit}`, beh, acc,
       claim: role[0], real: role[1], substance: role[2], offer: role[3], small: pick(SMALL_TALK[kind]),
-      leaves: kind === "interesting" ? ri(20, 100) : ri(25, 140),
+      leaves: Math.round(kind === "interesting" ? ri(20, 100) * k : ri(25, 140) * k), read: null,
     };
   });
 }
@@ -525,15 +551,16 @@ function attend(id) {
   const ev = S.agenda.find(e => e.id === id);
   if (!ev) return;
   const cost = travelCost(ev);
-  if (S.miles < cost) return toast(`The flight to ${CITY[ev.city]} costs ${FLIGHT} miles. You have ${S.miles}.`);
+  if (S.miles < cost) return toast(`The flight to ${CITY[ev.city]} costs ${FLIGHT} business cards. You have ${S.miles}.`);
   S.miles -= cost;
   advanceTo(ev.day);
   S.agenda = S.agenda.filter(e => e.id !== id);
   const fromCity = S.city;
   S.city = ev.city;
-  S.scene = { ev, min: 0, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [] };
-  const flew = cost ? ` Flight −${cost} miles.` : ev.city !== fromCity ? " Your host covered the flight." : "";
-  sceneLog(`You arrive at ${ev.venue}, ${CITY[ev.city]}. ${TIERS[ev.tier].size} people. You have 60 minutes.${flew}`, "sys");
+  if (ev.kind === "talk") { S.gig = ev; S.tab = "gig"; save(); render(); window.scrollTo(0, 0); return; }
+  S.scene = { ev, min: 0, dur: TIERS[ev.tier].len, guests: makeGuests(ev), cur: null, log: [], filter: "all", q: "", gained: [], invites: [] };
+  const flew = cost ? ` Flight −${cost} business cards.` : ev.city !== fromCity ? " Your host covered the flight." : "";
+  sceneLog(`You arrive at ${ev.venue}, ${CITY[ev.city]}. ${TIERS[ev.tier].size} people. You have ${TIERS[ev.tier].len} minutes.${flew}`, "sys");
   S.tab = "scene";
   save(); render(); window.scrollTo(0, 0);
 }
@@ -554,24 +581,26 @@ function tick(cost) {
     else anon.push(g);
   }
   if (anon.length) sceneLog(`${anon.length} ${anon.length === 1 ? "person has" : "people have"} left the room.`, "sys");
-  if (sc.min >= DUR) { sceneLog("The lights come up. The party is over.", "sys"); }
+  if (sc.min >= sc.dur) { sceneLog("The lights come up. The party is over.", "sys"); }
 }
 
 function approach(id) {
   const sc = S.scene, g = guest(id);
-  if (!g || g.leaves <= sc.min || sc.min + APPROACH > DUR) return;
+  if (!g || g.leaves <= sc.min || sc.min + INTRO > sc.dur) return;
   sc.cur = id;
-  if (g.stage === 0) { g.stage = 1; sceneLog(`"Hi, I'm ${g.name}." ${g.small}`); }
+  if (g.stage === 0) { g.stage = 1; updateRead(g); sceneLog(`"Hi, I'm ${g.name}." ${g.small}`); }
   else sceneLog(`You catch ${g.name} again. They remember you.`);
-  tick(APPROACH); closeSheet(); save(); render();
+  tick(INTRO); closeSheet(); save(); render();
 }
 
 function talk() {
   const sc = S.scene, g = guest(sc.cur);
-  if (!g || sc.min + TALK > DUR) return;
+  const cost = g ? stepCost(g.stage) : 0;
+  if (!g || sc.min + cost > sc.dur) return;
   if (g.stage >= 4) sceneLog(`The conversation with ${g.name} is running dry. You talk about the weather.`);
   else {
     g.stage++;
+    updateRead(g);
     if (g.stage === 2) {
       sceneLog(`You ask what they do. "${g.claim}"`);
       if (g.kind === "useless") giveCard(g, g.claim, "They press a business card into your hand before you can ask more.");
@@ -585,7 +614,7 @@ function talk() {
       else giveInvite(g);
     }
   }
-  tick(TALK); save(); render();
+  tick(cost); save(); render();
 }
 
 function giveCard(g, occ, text) {
@@ -609,6 +638,16 @@ function giveInvite(g) {
   }
   sc.invites.push(ev);
   sceneLog(`"You should come to the ${ev.title} — ${ev.venue}, ${CITY[ev.city]}, on day ${ev.day}. ${ev.pitch}" Added to your agenda.`, "gain");
+}
+
+function recordTalk(ok) {
+  const g = S.gig;
+  S.talks.push({ id: uid(), level: g.level, city: g.city, day: S.day, ok });
+  if (!S.stamps.includes(g.city)) S.stamps.push(g.city);
+  S.gig = null;
+  advanceTo(S.day + 1);
+  S.tab = "passport";
+  save(); render(); window.scrollTo(0, 0);
 }
 
 function endScene() {
@@ -647,13 +686,13 @@ const ICONS = {
 function renderTop() {
   const where = S.city;
   $("#top").innerHTML = `
-    <div class="brand">POCKET <span>EXPAT</span></div>
+    <div class="brand">RETICULAR<span>.</span></div>
     <span class="chip">DAY <b>${S.day}</b></span>
     <span class="chip" title="${esc(CITY[S.city])}">${esc(where)}</span>
-    <span class="chip"><b>${fmt(S.miles)}</b> mi</span>`;
+    <span class="chip"><b>${fmt(S.miles)}</b> cards</span>`;
 }
 function renderTabs() {
-  const inScene = S.tab === "scene" || S.tab === "after";
+  const inScene = S.tab === "scene" || S.tab === "after" || S.tab === "gig";
   $("#tabs").hidden = inScene;
   if (inScene) return;
   const tabs = [["board", "Board"], ["agenda", "Agenda"], ["contacts", "Contacts"], ["passport", "Passport"]];
@@ -665,10 +704,30 @@ function renderTabs() {
 
 function flapText(s, n) { return `<span class="flap">${s.padEnd(n).slice(0, n).split("").map(c => `<i>${c === " " ? "&nbsp;" : esc(c)}</i>`).join("")}</span>`; }
 
+function talkCard(e) {
+  const cost = travelCost(e), when = e.day === S.day ? "Today" : `Day ${e.day} · in ${e.day - S.day} day${e.day - S.day === 1 ? "" : "s"}`;
+  return `
+  <article class="pass talk">
+    <div class="pass-main">
+      <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="stars" style="color:var(--blue)">Level ${e.level}</span></div>
+      <div class="pass-title">${esc(e.title)}</div>
+      <div class="pass-meta">${esc(CITY[e.city])}</div>
+      <div class="pass-actions">
+        <button class="btn primary" data-act="attend" data-v="${e.id}" ${S.miles < cost ? "disabled" : ""}>Speak<span class="cost">${cost ? `−${cost} cards` : ""}</span></button>
+        <span class="small muted">${e.city === S.city ? "Local" : `Flight ${FLIGHT} cards`}</span></div>
+    </div>
+    <div class="pass-stub">
+      <span class="label">To</span><span class="iata">${e.city}</span>
+      <span class="label" style="margin-top:6px">When</span><span class="small" style="font-weight:700;text-align:center">${when}</span>
+    </div>
+  </article>`;
+}
+
 function passCard(e, opts = {}) {
+  if (e.kind === "talk") return talkCard(e);
   const T = TIERS[e.tier], cost = travelCost(e), today = e.day === S.day;
   const when = today ? "Tonight" : `Day ${e.day} · in ${e.day - S.day} day${e.day - S.day === 1 ? "" : "s"}`;
-  const flight = e.city === S.city ? "Local" : e.covered ? "Flight covered" : `Flight ${FLIGHT} mi`;
+  const flight = e.city === S.city ? "Local" : e.covered ? "Flight covered" : `Flight ${FLIGHT} cards`;
   return `
   <article class="pass r${e.tier}${opts.isNew ? " new" : ""}">
     <div class="pass-main">
@@ -678,7 +737,7 @@ function passCard(e, opts = {}) {
       <div class="pass-meta">${esc(e.venue)} · ${esc(CITY[e.city])}</div>
       ${e.pitch ? `<div class="pass-pitch">"${esc(e.pitch)}"</div>` : ""}
       ${opts.actions === false ? "" : `<div class="pass-actions">
-        <button class="btn primary" data-act="attend" data-v="${e.id}" ${S.miles < cost ? "disabled" : ""}>Attend<span class="cost">${cost ? `−${cost} mi` : ""}</span></button>
+        <button class="btn primary" data-act="attend" data-v="${e.id}" ${S.miles < cost ? "disabled" : ""}>Attend<span class="cost">${cost ? `−${cost} cards` : ""}</span></button>
         <span class="small muted">${flight}</span></div>`}
     </div>
     <div class="pass-stub">
@@ -691,27 +750,27 @@ function passCard(e, opts = {}) {
 function viewBoard() {
   const recent = S.lastPull.map(id => S.agenda.find(e => e.id === id)).filter(Boolean);
   const rows = [4, 3, 2, 1].map(t => `
-    <div class="flap-row">${flapText(TIERS[t].tag, 3)}<span class="dest">${esc(TIERS[t].name)} · ${TIERS[t].size} guests</span><span class="rate">${(TIERS[t].rate * 100).toFixed(0)}%</span></div>`).join("");
+    <div class="flap-row">${flapText(TIERS[t].tag, 3)}<span class="dest">${TIERS[t].len} min · ${TIERS[t].size} guests</span><span class="rate">${(TIERS[t].rate * 100).toFixed(0)}%</span></div>`).join("");
   return `
   <section class="board" aria-label="Event board">
     <div class="board-head"><span class="board-title">DEPARTURES</span><span class="board-sub">Event board · Day ${S.day}</span></div>
-    <div class="flaps">${rows}</div>
+    <div class="flaps">${rows}<div class="flap-row">${flapText("TLK", 3)}<span class="dest">Speaking engagement · Level ${talkLevel()}</span><span class="rate">${(TALK_RATE * 100).toFixed(0)}%</span></div></div>
     <div class="btns">
-      <button class="btn" data-act="pull" data-v="1" ${S.miles < PULL ? "disabled" : ""}>Draw 1<span class="cost">${PULL} mi</span></button>
-      <button class="btn gold" data-act="pull" data-v="10" ${S.miles < PULL10 ? "disabled" : ""}>Draw 10<span class="cost">${PULL10} mi</span></button>
+      <button class="btn" data-act="pull" data-v="1" ${S.miles < PULL ? "disabled" : ""}>Draw 1<span class="cost">${PULL} cards</span></button>
+      <button class="btn gold" data-act="pull" data-v="10" ${S.miles < PULL10 ? "disabled" : ""}>Draw 10<span class="cost">${PULL10} cards</span></button>
     </div>
     <div class="pity"><span>SR or better within <b>${SR_PITY - S.pity}</b> draws</span><span>SSR guaranteed within <b>${SSR_PITY - S.pitySSR}</b></span></div>
   </section>
-  <p class="small muted">Each draw posts an event somewhere in the world to your agenda. Rarer events draw bigger rooms with more people worth meeting: 5% at a common mixer, 30% at a legendary one. Flights to other cities cost ${FLIGHT} miles unless your host covers them.</p>
+  <p class="small muted">Each draw posts an event somewhere in the world to your agenda. Rarer events draw bigger rooms with more people worth meeting: 5% at a common mixer, 30% at a legendary one. Flights to other cities cost ${FLIGHT} business cards unless your host covers them.</p>
   ${recent.length ? `<div class="stack"><h2>Just drawn</h2>${recent.map(e => passCard(e, { isNew: true })).join("")}</div>` : `
-  <div class="empty">Draw from the board to post your first events. You start with ${fmt(START_MILES)} miles: enough for a ten-draw.</div>`}`;
+  <div class="empty">Draw from the board to post your first events. You start with ${fmt(START_MILES)} business cards: enough for a ten-draw.</div>`}`;
 }
 
 function viewAgenda() {
   const evs = [...S.agenda].sort((a, b) => a.day - b.day || b.tier - a.tier);
   return `
   <div class="row" style="justify-content:space-between"><h2>Agenda</h2>
-    <button class="btn" data-act="wait">Wait a day<span class="cost">+${STIPEND} mi</span></button></div>
+    <button class="btn" data-act="wait">Wait a day<span class="cost">+${STIPEND} cards</span></button></div>
   <p class="small muted">Going to an event moves the calendar to its day. Anything scheduled before then is missed. One event per evening.</p>
   ${evs.length ? `<div class="stack">${evs.map(e => passCard(e)).join("")}</div>` :
     `<div class="empty">Nothing planned. Draw from the board, or meet people who can take you places.</div>`}`;
@@ -749,18 +808,19 @@ function viewPassport() {
     <div class="stat"><div class="label">Draws</div><div class="v">${S.pulls}</div></div>
     <div class="stat"><div class="label">Cities</div><div class="v">${S.stamps.length}/${CITIES.length}</div></div>
   </div>
+  ${viewTrack()}
   <h2>Stamps</h2>
   <div class="stamps">${CITIES.map(([c, n], i) => `<div class="stamp ${S.stamps.includes(c) ? "got" : ""}" style="--rot:${(i * 37) % 17 - 8}deg"><span><b>${c}</b>${esc(n)}</span></div>`).join("")}</div>
   <button class="btn" data-act="reset-ask" style="align-self:flex-start">Start a new life</button>`;
 }
 
 function viewScene() {
-  const sc = S.scene, ev = sc.ev, left = DUR - sc.min, cur = sc.cur ? guest(sc.cur) : null;
+  const sc = S.scene, ev = sc.ev, left = sc.dur - sc.min, cur = sc.cur ? guest(sc.cur) : null;
   let people = present();
   if (sc.filter === "met") people = people.filter(g => g.stage > 0);
   if (sc.filter === "new") people = people.filter(g => g.stage === 0);
   if (sc.q) people = people.filter(g => (g.look + " " + g.beh + (g.stage ? " " + g.name : "")).toLowerCase().includes(sc.q.toLowerCase()));
-  const over = left < APPROACH;
+  const over = left < INTRO;
   const stages = ["", "Introduced", "Small talk", "Getting real", "Invitation"];
   return `
   <section class="scene-head">
@@ -770,31 +830,64 @@ function viewScene() {
       <div><div class="clock">${clock(sc.min)}</div><div class="small muted">${left} min left · ${present().length} still here</div></div>
       <button class="btn ${over ? "red" : ""}" data-act="end">${over ? "See how it went" : "Leave the party"}</button>
     </div>
-    <div class="progress"><span style="width:${sc.min / DUR * 100}%"></span></div>
+    <div class="progress"><span style="width:${sc.min / sc.dur * 100}%"></span></div>
   </section>
   ${cur ? `
   <section class="card convo stack">
     <div class="row" style="justify-content:space-between"><div><span class="label">Talking to</span><h3>${esc(cur.name)}</h3></div>
       <div class="stage-dots" aria-label="${stages[cur.stage]}">${[1, 2, 3, 4].map(i => `<span class="${cur.stage >= i ? "on" : ""}"></span>`).join("")}</div></div>
     <p class="small muted">${esc(cur.look)}, ${esc(cur.beh)}.${cur.stage >= 2 ? ` They said: "${esc(cur.claim)}"` : ""}</p>
+    ${readMeter(cur)}
     <div class="row">
-      <button class="btn primary" data-act="talk" ${left < TALK ? "disabled" : ""}>Keep talking<span class="cost">10 min</span></button>
+      <button class="btn primary" data-act="talk" ${left < stepCost(cur.stage) ? "disabled" : ""}>Keep talking<span class="cost">${stepCost(cur.stage)} min</span></button>
       <button class="btn" data-act="walk">Walk away</button>
     </div>
   </section>` : ""}
   <section class="log" aria-live="polite">${sc.log.slice(0, 4).map(l => `<p class="${l.cls}">${esc(l.text)}</p>`).join("")}</section>
   ${over ? "" : `
   <section class="stack">
-    <div class="row" style="justify-content:space-between"><h3>Who's here</h3><span class="small muted">Approach: 5 min</span></div>
+    <div class="row" style="justify-content:space-between"><h3>Who's here</h3><span class="small muted">Introduce yourself: 1 min</span></div>
     <input class="search" id="q" type="search" placeholder="Filter by looks, e.g. host, suit, water" value="${esc(sc.q)}" aria-label="Filter guests">
     <div class="filters">${[["all", "Everyone"], ["new", "Not met"], ["met", "Met"]].map(([k, l]) => `<button data-act="filter" data-v="${k}" aria-pressed="${sc.filter === k}">${l}</button>`).join("")}</div>
     <div class="guests">${people.map(g => `
       <button class="guest ${g.stage ? "met" : ""} ${g.id === sc.cur ? "current" : ""}" data-act="guest" data-v="${g.id}">
         <span class="num">#${g.id}</span>
         <span class="desc">${g.stage ? `<b>${esc(g.name)}</b>` : ""}${esc(g.look)}, ${esc(g.beh)}</span>
-        <span class="small muted">${g.stage ? stages[g.stage] : ""}</span>
+        <span class="small muted">${g.stage ? stages[g.stage] + `<span class="mini-read"><span style="width:${g.read}%"></span></span>` : ""}</span>
       </button>`).join("") || '<div class="empty">Nobody matches that.</div>'}</div>
   </section>`}`;
+}
+
+function readMeter(g) {
+  return `<div class="read"><span class="label">Your read</span><div class="progress read-bar"><span style="width:${g.read}%"></span></div></div>`;
+}
+
+function viewGig() {
+  const g = S.gig;
+  return `
+  <section class="stack">
+    <div class="row"><span class="tier" style="background:var(--blue)">TLK</span><span class="label">${g.city} · ${esc(CITY[g.city])}</span></div>
+    <h2>${esc(g.title)}</h2>
+  </section>
+  <section class="card stack">
+    <span class="label">Performance minigame</span>
+    <p class="muted">Not defined yet. Record the outcome to test the track record and level unlocks.</p>
+    <div class="row">
+      <button class="btn primary" data-act="talk-ok">Record success</button>
+      <button class="btn" data-act="talk-fail">Record failure</button>
+    </div>
+  </section>`;
+}
+
+function viewTrack() {
+  const lvl = talkLevel();
+  const levels = Array.from({ length: TALK_LEVELS }, (_, i) => i + 1).map(l => {
+    const done = S.talks.filter(t => t.level === l), ok = done.filter(t => t.ok).length;
+    return `<div class="row" style="justify-content:space-between"><span><b>Level ${l}</b> ${l > lvl ? '<span class="tag">Locked</span>' : ""}</span>
+      <span class="small muted">${ok} succeeded · ${done.length - ok} failed${l < TALK_LEVELS ? ` · ${Math.min(ok, TALK_UNLOCK)}/${TALK_UNLOCK} to unlock Level ${l + 1}` : ""}</span></div>`;
+  }).join("");
+  const hist = [...S.talks].reverse().map(t => `<div class="row small"><span class="tag ${t.ok ? "good" : "bad"}">${t.ok ? "Success" : "Failure"}</span>Level ${t.level} · ${esc(CITY[t.city])} · day ${t.day}</div>`).join("");
+  return `<h2>Track record</h2><div class="card stack">${levels}${hist ? `<div class="stack">${hist}</div>` : '<p class="small muted">No speaking engagements yet. They are rare draws on the board.</p>'}</div>`;
 }
 
 function viewAfter() {
@@ -818,8 +911,8 @@ function viewAfter() {
   ${!A.gained.length || all ? `
   <section class="card stack">
     ${A.invites.length ? `<h3>Invitations</h3><div class="stack">${A.invites.map(e => `<div class="row"><span class="tier r${e.tier}" style="background:var(--rc)">${TIERS[e.tier].tag}</span><span class="small">${esc(e.title)} · ${esc(CITY[e.city])} · day ${e.day} <span class="muted">from ${esc(e.host)}</span></span></div>`).join("")}</div>` : ""}
-    <div class="row" style="justify-content:space-between"><span>Miles earned</span><b class="chip">+${fmt(A.miles)} mi</b></div>
-    ${A.isNewCity ? `<p class="small">New passport stamp: <b>${A.ev.city}</b> ${esc(CITY[A.ev.city])} (+100 mi included).</p>` : ""}
+    <div class="row" style="justify-content:space-between"><span>Business cards earned</span><b class="chip">+${fmt(A.miles)} cards</b></div>
+    ${A.isNewCity ? `<p class="small">New passport stamp: <b>${A.ev.city}</b> ${esc(CITY[A.ev.city])} (+100 cards included).</p>` : ""}
     <button class="btn primary block" data-act="after-done">Back to the agenda</button>
   </section>` : `<button class="btn block" data-act="flip-all">Reveal all</button>`}`;
 }
@@ -828,22 +921,25 @@ function render() {
   if (S.scene && S.tab !== "scene") S.tab = "scene";
   if (!S.scene && S.tab === "scene") S.tab = "agenda";
   if (!S.after && S.tab === "after") S.tab = "agenda";
+  if (S.gig) S.tab = "gig";
+  if (!S.gig && S.tab === "gig") S.tab = "agenda";
   renderTop(); renderTabs();
-  const v = { board: viewBoard, agenda: viewAgenda, contacts: viewContacts, passport: viewPassport, scene: viewScene, after: viewAfter }[S.tab] || viewBoard;
+  const v = { board: viewBoard, agenda: viewAgenda, contacts: viewContacts, passport: viewPassport, scene: viewScene, after: viewAfter, gig: viewGig }[S.tab] || viewBoard;
   $("#view").innerHTML = v();
 }
 
 function guestSheet(id) {
-  const g = guest(id), sc = S.scene, left = DUR - sc.min;
+  const g = guest(id), sc = S.scene, left = sc.dur - sc.min;
   const isCur = sc.cur === id;
   openSheet(`
     <div class="row" style="justify-content:space-between"><span class="label">Guest #${g.id}</span><button class="btn" data-act="close">Close</button></div>
     <h2>${g.stage ? esc(g.name) : "Someone you haven't met"}</h2>
     <p>${esc(g.look[0].toUpperCase() + g.look.slice(1))}, with ${esc(g.acc)}. Right now they are ${esc(g.beh)}.</p>
     ${g.stage >= 2 ? `<p class="muted">They told you: "${esc(g.claim)}"</p>` : ""}
+    ${g.stage ? readMeter(g) : ""}
     ${g.card ? '<p class="small"><span class="tag good">Card in your contacts</span></p>' : ""}
     ${isCur ? '<p class="small muted">You are talking to them now.</p>' :
-      `<button class="btn primary block" data-act="approach" data-v="${g.id}" ${left < APPROACH ? "disabled" : ""}>${g.stage ? "Go back to them" : "Approach"}<span class="cost">5 min</span></button>`}`);
+      `<button class="btn primary block" data-act="approach" data-v="${g.id}" ${left < INTRO ? "disabled" : ""}>${g.stage ? "Go back to them" : "Introduce yourself"}<span class="cost">1 min</span></button>`}`);
 }
 
 function contactSheet(id) {
@@ -873,12 +969,14 @@ document.addEventListener("click", e => {
     case "walk": { const g = guest(S.scene.cur); sceneLog(`You excuse yourself from ${g.name}.`, "sys"); S.scene.cur = null; save(); render(); break; }
     case "filter": S.scene.filter = v; save(); render(); break;
     case "end": endScene(); break;
+    case "talk-ok": recordTalk(true); break;
+    case "talk-fail": recordTalk(false); break;
     case "flip": if (!S.after.open.includes(v)) { S.after.open.push(v); save(); render(); } break;
     case "flip-all": S.after.open = S.after.gained.map(c => c.id); save(); render(); break;
     case "after-done": S.after = null; S.tab = "agenda"; save(); render(); window.scrollTo(0, 0); break;
     case "contact": contactSheet(v); break;
     case "close": closeSheet(); break;
-    case "reset-ask": openSheet(`<h2>Start a new life?</h2><p class="muted">This wipes your contacts, agenda, stamps and miles on this device.</p>
+    case "reset-ask": openSheet(`<h2>Start a new life?</h2><p class="muted">This wipes your contacts, agenda, stamps and business cards on this device.</p>
       <div class="row"><button class="btn red" data-act="reset">Start over</button><button class="btn" data-act="close">Keep playing</button></div>`); break;
     case "reset": S = fresh(); save(); closeSheet(); render(); toast("New arrival in Lisbon. Good luck."); break;
   }

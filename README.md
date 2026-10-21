@@ -1,23 +1,25 @@
 # Reticular: Networking Simulator
 
-## Pocket Expat (phone game)
+## Phone game (`pocket-expat/index.html`)
 
-`pocket-expat/index.html` is a mobile-first web game built on the cocktail below. You're a
-student abroad, and the gacha is a departures board of networking events around the world.
-
-- **Draw** events with miles (100 per draw, 900 for ten). Tiers: N 55%, R 30%, SR 12%, SSR 3%.
-  SR or better is guaranteed every 10 draws and SSR within 60.
-- Rarer events have bigger rooms with more people worth meeting: 5% at N up to 30% at SSR.
-- **Attend** an event from your agenda. This jumps the calendar to its day, and anything
-  scheduled before then is missed. Flights cost 100 miles unless your host covers them.
-- Each event is the 60-minute cocktail: approaching someone costs 5 minutes and each
-  conversation step costs 10.
-- **The morning after:** the cards you collected flip over to show their rarity. Interesting
-  people (R/SR/SSR) invite you to good events in other cities with the flight paid. Schmucks
-  (N) invite you to pointless ones.
-- **Passport:** stamps for each city, plus an expat level based on reach (R = 1, SR = 3, SSR = 8).
-
+A mobile-first web build blending the Pocket Expat prototype with the Reticular brief.
 Open the file in a phone browser to play. Progress is saved in that browser only.
+
+- **Currency:** business cards. A draw costs 100 and ten draws cost 900. Flights to other
+  cities cost 100 unless your host covers them, and waiting a day earns 50.
+- **Draws:** events at tiers N 55%, R 30%, SR 12% and SSR 3%. SR or better is guaranteed
+  within 10 draws and SSR within 60. Speaking engagements are a rare separate result.
+- **Event length depends on tier:** N 30 min, R 45, SR 90, SSR 120.
+- **Conversations:** introducing yourself costs 1 min, and each further step doubles
+  (2, 4, 8 min). "Your read" is a gauge that updates after each step. It is noisy at
+  first and gets more accurate the longer you talk.
+- **Speaking engagements** are drawn at your highest unlocked level. You record their
+  outcome in a track record, and enough successes at one level unlock the next.
+  *Placeholders until specified:* a 2% draw rate, 3 levels, and 3 successes to unlock the
+  next level. The performance minigame is not defined yet, so for now you record each
+  outcome by hand.
+- **The morning after:** your contact cards flip to reveal their rarity, and invitations
+  join your agenda. The passport shows stamps, your level and your track record.
 
 ## The cocktail (text prototype)
 
